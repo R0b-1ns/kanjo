@@ -292,6 +292,20 @@ func TestIntegrationIgnoredFilesAreNotInTheState(t *testing.T) {
 	}
 }
 
+func TestIntegrationIgnoredFilesAreCounted(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_hidden")
+	if r.state(w).Ignored != 0 {
+		t.Fatal("a clean worktree reports ignored files")
+	}
+	// The agent can write the rule that hides its own file.
+	writeFile(t, filepath.Join(w.Dir, "sub", ".gitignore"), "*\n")
+	writeFile(t, filepath.Join(w.Dir, "sub", "hidden"), "x")
+	if got := r.state(w).Ignored; got != 2 {
+		t.Fatalf("Ignored = %d, want 2 (the rule file and the file it hides)", got)
+	}
+}
+
 func TestIntegrationCreateTakesTheLockAndReleaseDropsIt(t *testing.T) {
 	r := newRepo(t, true)
 	w := r.create("ses_lock")

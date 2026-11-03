@@ -657,3 +657,22 @@ func TestAgentRequestCarriesTheGrace(t *testing.T) {
 		t.Fatalf("grace = %v", got)
 	}
 }
+
+func TestDelegateWarnsOfIgnoredFilesWithoutChangingTheVerdict(t *testing.T) {
+	r := newRig(t, append([]kanjotest.AgentStep{kanjotest.WriteIgnored("sub/hidden", "x")}, writeA...))
+	out := r.run(r.req())
+	if out.Result.Verdict != core.RunOK {
+		t.Fatalf("verdict = %v, ignored files must not change it", out.Result.Verdict)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "ignored") {
+		t.Fatalf("warnings = %q, want one about ignored files", out.Warnings)
+	}
+}
+
+func TestDelegateDoesNotWarnWithoutIgnoredFiles(t *testing.T) {
+	r := newRig(t, writeA)
+	out := r.run(r.req())
+	if len(out.Warnings) != 0 {
+		t.Fatalf("warnings = %q", out.Warnings)
+	}
+}

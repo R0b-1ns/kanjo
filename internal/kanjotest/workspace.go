@@ -20,7 +20,10 @@ const (
 	fakeMove = "2222222222222222222222222222222222222222"
 )
 
-type fakeFile struct{ content, link string }
+type fakeFile struct {
+	content, link string
+	ignored       bool
+}
 
 type fakeTree struct {
 	files map[string]fakeFile
@@ -109,6 +112,12 @@ func (f *FakeWorkspace) tree(session string) *fakeTree {
 // Put creates or changes a regular file of the session's worktree.
 func (f *FakeWorkspace) Put(session, path, content string) {
 	f.setFile(session, path, fakeFile{content: content})
+}
+
+// PutIgnored creates a regular file that git ignores: it is counted in
+// State.Ignored and left out of the tree.
+func (f *FakeWorkspace) PutIgnored(session, path, content string) {
+	f.setFile(session, path, fakeFile{content: content, ignored: true})
 }
 
 // Link creates or changes a symbolic link of the session's worktree.
@@ -204,6 +213,10 @@ func stateOf(tr *fakeTree) core.State {
 	var tree []string
 	for _, p := range paths {
 		fl := tr.files[p]
+		if fl.ignored {
+			st.Ignored++
+			continue
+		}
 		e := core.Entry{Path: p, Mode: "100644", Blob: fakeHash(fl.content)}
 		if fl.link != "" {
 			e.Mode, e.Blob, e.Link = "120000", fakeHash(fl.link), fl.link

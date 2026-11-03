@@ -30,6 +30,11 @@ func Write(path, content string) AgentStep {
 	return func(r *agentRun) { r.w.Put(r.req.Session, path, content) }
 }
 
+// WriteIgnored creates a file that git ignores.
+func WriteIgnored(path, content string) AgentStep {
+	return func(r *agentRun) { r.w.PutIgnored(r.req.Session, path, content) }
+}
+
 // Remove deletes a file of the worktree.
 func Remove(path string) AgentStep {
 	return func(r *agentRun) { r.w.Delete(r.req.Session, path) }

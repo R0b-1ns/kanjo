@@ -182,6 +182,12 @@ func (w *Workspace) State(ctx context.Context, wd core.Workdir) (core.State, err
 	if err != nil {
 		return core.State{}, err
 	}
+	// What the add left out: the agent can write the rule that hides its own
+	// files, so they are counted for the report, not judged.
+	ignored, err := w.git(ctx, wd.Dir, env, "ls-files", "-z", "--others", "--ignored", "--exclude-standard")
+	if err != nil {
+		return core.State{}, err
+	}
 	head, err := w.git(ctx, w.repo, nil, "rev-parse", "--verify", "--end-of-options", "refs/heads/"+wd.Branch+"^{commit}")
 	if err != nil {
 		return core.State{}, err
@@ -190,7 +196,7 @@ func (w *Workspace) State(ctx context.Context, wd core.Workdir) (core.State, err
 	if err != nil {
 		return core.State{}, err
 	}
-	return core.State{Tree: tree, Head: head, Entries: entries}, nil
+	return core.State{Tree: tree, Head: head, Entries: entries, Ignored: strings.Count(ignored, "\x00")}, nil
 }
 
 // owns checks that wd is a workdir this adapter hands out.

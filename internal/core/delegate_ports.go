@@ -110,8 +110,9 @@ type Workspace interface {
 	// run lock, held until Release. ErrExists when either already exists;
 	// nothing is then changed.
 	Create(ctx context.Context, session, commit string) (Workdir, error)
-	// State is the content of the worktree (files not ignored by git). It never
-	// follows a symbolic link and never changes the repository's own index.
+	// State is the content of the worktree (files not ignored by git; those
+	// are only counted in State.Ignored). It never follows a symbolic link and
+	// never changes the repository's own index.
 	State(ctx context.Context, w Workdir) (State, error)
 	// Diff writes the changes from the base commit to the state, new, changed,
 	// deleted and binary files included. ErrDiffTooLarge past max bytes.
@@ -141,11 +142,13 @@ type Entry struct {
 }
 
 // State is the content of a worktree at an instant. Equal Trees mean equal
-// content. Head is the commit the branch points to.
+// content. Head is the commit the branch points to. Ignored counts the files
+// present but ignored by git: they are not in Tree and nothing judges them.
 type State struct {
 	Tree    string
 	Head    string
 	Entries []Entry
+	Ignored int
 }
 
 // Owned names what the journal recorded about a run: nothing else may be

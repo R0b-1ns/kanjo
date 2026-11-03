@@ -62,8 +62,10 @@ for `clean`.
 
 The state of the worktree is a tree id taken with a temporary git index, so the
 real index is untouched and a symbolic link is stored as a link, never
-followed. Files ignored by git are not seen (an `--expect` path that is ignored
-is reported missing).
+followed. Files ignored by git are not judged (an `--expect` path that is ignored
+is reported missing). They are counted, and `run` prints a warning with the
+count, because the agent can write the `.gitignore` rule that hides its own
+files: look in the worktree before you trust a run. The verdict does not change.
 
 - **Forbidden:** a changed path that is, or is under, a `--forbid` path (compared without regard to case), or has a `.git` segment.
 - **Missing:** an `--expect` path not added or modified.

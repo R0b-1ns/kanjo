@@ -227,6 +227,7 @@ type delegation struct {
 
 	reasons       []Reason
 	warnings      []string
+	ignored       int // files present but ignored by git, as of the last read
 	launches      int
 	retries       int
 	before, after State
@@ -459,6 +460,7 @@ func (g *delegation) read() (State, bool) {
 		g.fail(ReasonWorkspaceFailed)
 		return State{}, false
 	}
+	g.ignored = st.Ignored
 	return st, true
 }
 
@@ -522,6 +524,9 @@ func (g *delegation) complete() DelegateOutcome {
 	res := RunResult{
 		Verdict: v, Exit: v.ExitCode(), FinishedAt: now, Launches: g.launches, Retries: g.retries,
 		Duration: max(0, now.Sub(g.run.StartedAt)), Tip: g.after.Head,
+	}
+	if g.ignored > 0 {
+		g.warn(fmt.Sprintf("%d file(s) ignored by git were not judged; check them in the worktree", g.ignored))
 	}
 	rep := g.report(res)
 	g.writeReport(bk, rep)
