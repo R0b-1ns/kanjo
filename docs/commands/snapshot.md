@@ -23,9 +23,9 @@ No positional arguments are accepted.
 1. Loads the configuration ([../configuration.md](../configuration.md)).
 2. Reads the price file only to learn each model's long-context threshold.
 3. Reads the manual task map `task.map_file` if it exists ([../claude-transcripts.md](../claude-transcripts.md)).
-4. Reads every transcript under `claude.projects_dir` whose project folder name starts with one of `claude.project_prefixes`.
+4. Reads every transcript under `claude.projects_dir` whose project folder name equals one of `claude.project_prefixes` or starts with it followed by `-`.
 5. Validates every row. If any row is invalid nothing is written (exit 1).
-6. In one transaction: for each incoming row, replaces the stored row with the same session, day, model and long-context flag (whatever its task); inserts the new rows; records how each session's task was found; appends one line to the `snapshots` table. Stored rows that the transcripts no longer have are kept.
+6. In one transaction: for each incoming row, replaces the stored row with the same session, day, model and long-context flag (whatever its task) **unless the stored row counts more messages**, in which case the stored row is kept and the incoming one dropped; records how each session's task was found; appends one line to the `snapshots` table. Stored rows that the transcripts no longer have are kept. Saved usage therefore never shrinks when Claude Code purges old files.
 
 A session with no readable usage rows is not recorded, so a damaged or
 emptied transcript cannot erase saved history.

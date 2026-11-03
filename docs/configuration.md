@@ -25,7 +25,7 @@ folder.
 | `data_dir` | string | `.ai-usage` | non-empty path | Folder holding `kanjo.db`, its `.gitignore` and the default task map |
 | `prices_file` | string | `""` (embedded prices) | path to a prices file | See [prices.md](prices.md) |
 | `claude.projects_dir` | string | `~/.claude/projects` | path | Folder Claude Code writes transcripts to |
-| `claude.project_prefixes` | array of strings | `[<current folder with every non-alphanumeric character replaced by "-">]` | 1 or more non-empty strings | A project folder is read when its name **starts with** one of these. The default is `-Users-me-Project-app` for `/Users/me/Project/app`, so it also matches `-Users-me-Project-app-api` |
+| `claude.project_prefixes` | array of strings | `[<current folder with every non-alphanumeric character replaced by "-">]` | 1 or more non-empty strings | A project folder is read when its name **equals** a prefix or **starts with the prefix plus `-`**. The default is `-Users-me-Project-app` for `/Users/me/Project/app`: it reads `-Users-me-Project-app` and `-Users-me-Project-app-api`, not `-Users-me-Project-app2`. A prefix ending in `-` reads only the sub-names. Claude Code writes `/` and `-` the same way, so a sibling folder `app-legacy` cannot be told from the sub-folder `app/legacy` |
 | `claude.max_line_bytes` | integer | `67108864` (64 MiB) | greater than 0 | Longer transcript lines are skipped and counted, never loaded |
 | `task.pattern` | string (regular expression, Go RE2 syntax) | `\b[A-Z][A-Z0-9]+-[0-9]+(\.[0-9]+)?\b` | any valid regex, or `""` to disable | Finds task labels such as `ABC-12` or `ABC-12.3` in the user's messages |
 | `task.map_file` | string | `<data_dir>/claude-tasks.tsv` | path | Manual map "session id prefix, tab, task"; see [claude-transcripts.md](claude-transcripts.md) |
@@ -41,7 +41,7 @@ pass the option instead.
 |---|---|
 | `data_dir`, `prices_file`, `task.map_file` | The path, once symbolic links are resolved, must be the current folder or inside it. A dangling symbolic link is refused |
 | `claude.projects_dir` | Not allowed |
-| `claude.project_prefixes` | Every prefix must start with the current folder's own project name (the default prefix), so it can only widen to sub-folders of this project |
+| `claude.project_prefixes` | Every prefix must equal the current folder's own project name (the default prefix) or start with it followed by `-`, so it can only widen to sub-folders of this project |
 | other keys | Allowed |
 
 ## Examples
@@ -69,6 +69,19 @@ map names it):
 ```toml
 [task]
 pattern = ""
+```
+
+## The default task pattern is a heuristic
+
+The default `task.pattern` matches any upper-case word, a dash and digits
+(`ABC-12`). It also matches `UTF-8`, `SHA-256`, `GPT-4` or `CVE-2024` when they
+appear in your messages, and the most frequent label wins, so a session can be
+filed under the wrong task. Restrict it to your tracker's project keys, or use
+the manual task map:
+
+```toml
+[task]
+pattern = '\b(?:ABC|XYZ)-[0-9]+\b'
 ```
 
 ## Notes

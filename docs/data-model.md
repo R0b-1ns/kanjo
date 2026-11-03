@@ -7,7 +7,7 @@ One row per `(source, session, day, task, model, long_context)`.
 | Field | Type | Allowed values | Meaning |
 |---|---|---|---|
 | `source` | text | `[a-z][a-z0-9-]{0,31}` | Where the row comes from. `claude` for transcripts |
-| `session` | text | `[A-Za-z0-9_-]{1,128}` | Session identifier |
+| `session` | text | `[A-Za-z0-9_][A-Za-z0-9_-]{0,127}` (no leading `-`, so a CSV cell never looks like a formula) | Session identifier |
 | `day` | text | real date `YYYY-MM-DD`, **UTC** day of the message timestamp | |
 | `task` | text | `-`, or `[A-Za-z0-9][A-Za-z0-9._/-]{0,63}` with no empty, `.` or `..` segment | Task label. `-` means no task. Safe to use in a path |
 | `model` | text | `[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}` | Exact model id. `<synthetic>` is never stored |
@@ -68,9 +68,12 @@ no timestamp, so repeating a snapshot leaves them identical.
 
 `snapshot` replaces a stored row when an incoming row has the same
 `(source, session, day, model, long_context)`, whatever its task; this is what
-stops a changed task label from double counting. Every other stored row is
-kept, because Claude Code purges old transcripts and the database must keep
-what it already saved.
+stops a changed task label from double counting. **If the stored row counts
+more `messages` than the incoming one, the stored row is kept** and the
+incoming one is dropped: when only part of a session's files were purged, the
+saved history does not shrink. Every other stored row is kept too, because
+Claude Code purges old transcripts and the database must keep what it already
+saved. To start over, delete `kanjo.db`.
 
 ## Reading the data without kanjo
 

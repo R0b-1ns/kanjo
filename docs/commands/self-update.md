@@ -17,7 +17,7 @@ kanjo self-update [--check]
 ## Steps
 
 1. GET the latest release from `https://api.github.com/repos/R0b-1ns/kanjo/releases/latest` (answer capped at 1 MiB).
-2. If its tag equals the running version (`kanjo version`), stop: already up to date.
+2. If the latest release is not newer than the running version (`kanjo version`), stop: already up to date. Release tags are ordered by the timestamp in the tag, so a build as recent as or newer than the latest release is never replaced by an older one. A tag in another format (such as `dev`) counts as different and is replaced.
 3. Find the assets `kanjo-<GOOS>-<GOARCH>` and `SHA256SUMS`. Missing: error.
 4. Download `SHA256SUMS` (capped at 64 KiB) and read the checksum line of the binary.
 5. Download the binary (capped at 200 MiB) into a temporary file in the same folder as the running binary, hashing as it is written.
@@ -42,7 +42,7 @@ stdout, one line:
 |---|---|
 | installed | `updated <old tag> -> <new tag>` |
 | `--check`, newer release exists | `update available: <old tag> -> <new tag>` |
-| already the latest | `kanjo is up to date (<tag>)` |
+| not older than the latest release | `kanjo is up to date (<running tag>)` |
 
 A development build (`kanjo version` prints `kanjo dev`) always sees the latest
 release as newer.

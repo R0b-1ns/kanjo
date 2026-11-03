@@ -47,8 +47,10 @@ func TestStoreContract(t *testing.T) {
 ```
 
 The contract fixes the merge rule: an incoming row replaces the stored row with
-the same source, session, day, model and long-context flag whatever its task;
-every other stored row is kept.
+the same source, session, day, model and long-context flag whatever its task,
+unless the stored row counts more messages (then the stored row stays and the
+incoming one is dropped); every other stored row is kept. Also provide a
+read-only open that creates and writes nothing, for report commands.
 
 ## Add a price book
 

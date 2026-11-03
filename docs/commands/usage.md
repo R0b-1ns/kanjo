@@ -13,7 +13,7 @@ kanjo usage [--by task|model|day|session] [--task LABEL] [--since YYYY-MM-DD] [-
 | Option | Default | Values | Meaning |
 |---|---|---|---|
 | `--by` | `task` | `task`, `model`, `day`, `session` | Group rows by this field. For `task`, a label is cut at its first `/` (`ABC-12/part` counts under `ABC-12`) |
-| `--task` | all tasks | a task label such as `ABC-12` | Keep only rows of this task (compared after the same cut at `/`) |
+| `--task` | all tasks | a task label such as `ABC-12` or `ABC-12/review` | Keep rows whose task is this label or below it (`ABC-12` also selects `ABC-12/review`; `ABC-12/review` does not select `ABC-12/other`) |
 | `--since` | all days | `YYYY-MM-DD` | Keep only days on or after this date (UTC days, inclusive) |
 | `--csv` | off | flag | Print CSV on stdout instead of an aligned table |
 | `--data-dir` | `data_dir` from the config | a folder path | Folder holding `kanjo.db` |
@@ -67,8 +67,12 @@ session's messages named more than one task label but all its usage is filed
 under one task (task markers, which would split it per message, are not built
 yet).
 
-When the database is missing or empty, stdout is `no data; run kanjo snapshot`
-and the exit code is 0.
+When the database is missing or empty the exit code is 0 and the text
+`no data; run kanjo snapshot` is printed: on stdout normally, on stderr with
+`--csv` (stdout then holds only the CSV header, so it stays a valid CSV).
+
+`usage` opens the database read-only: it creates nothing and works on a
+read-only data folder.
 
 ## Exit codes
 

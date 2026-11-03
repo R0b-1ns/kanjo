@@ -9,8 +9,9 @@ How `kanjo snapshot` reads usage from Claude Code's local transcripts.
 <claude.projects_dir>/<project folder>/<session>/subagents/*.jsonl
 ```
 
-A project folder is read when its name starts with one of
-`claude.project_prefixes` ([configuration.md](configuration.md)). Sub-agent
+A project folder is read when its name equals one of
+`claude.project_prefixes` or starts with that prefix followed by `-`
+([configuration.md](configuration.md)). Sub-agent
 files belong to their parent session. If the same session id appears under two
 matching project folders it is one session. Only regular `.jsonl` files and
 real folders are read: symbolic links are never followed.
@@ -67,7 +68,7 @@ lines starting with `#` are ignored; an error names the line number:
 4153a2d6	ABC-12
 ```
 
-A session id prefix is `[A-Za-z0-9_-]+`; a task follows the `task` rules of
+A session id prefix starts with a letter, digit or `_` and continues with `[A-Za-z0-9_-]`; a task follows the `task` rules of
 [data-model.md](data-model.md) and may not be `-`. A prefix may appear once.
 
 ## Known limits
