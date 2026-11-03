@@ -6,15 +6,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/R0b-1ns/kanjo/internal/core"
 	"github.com/R0b-1ns/kanjo/internal/gitworktree"
+	"github.com/R0b-1ns/kanjo/internal/kanjotest"
 )
 
 // gitIn runs git for the test itself, with no user configuration.
@@ -324,5 +327,270 @@ func TestIntegrationWorktreeIsPrivateAndOnItsBranch(t *testing.T) {
 	}
 	if lf, err := os.Stat(filepath.Join(r.data, "worktrees", "ses_priv.lock")); err != nil || lf.Mode().Perm() != 0o600 {
 		t.Fatalf("lock file: %v %v", lf, err)
+	}
+}
+
+func fixtureFor(t *testing.T, commits bool) kanjotest.WorkspaceFixture {
+	r := newRepo(t, commits)
+	return kanjotest.WorkspaceFixture{
+		Workspace: r.ws,
+		Write:     func(w core.Workdir, path, content string) { writeFile(t, filepath.Join(w.Dir, path), content) },
+		Symlink: func(w core.Workdir, path, target string) {
+			if err := os.Symlink(target, filepath.Join(w.Dir, path)); err != nil {
+				t.Fatal(err)
+			}
+		},
+		Delete: func(w core.Workdir, path string) {
+			if err := os.Remove(filepath.Join(w.Dir, path)); err != nil {
+				t.Fatal(err)
+			}
+		},
+		Lock:    r.holdLock,
+		MoveTip: r.moveTip,
+		ForeignDir: func(session string) {
+			writeFile(t, filepath.Join(r.data, "worktrees", session, "theirs.txt"), "mine")
+		},
+	}
+}
+
+// holdLock takes the run lock of a session as another process would.
+func (r *repo) holdLock(session string) func() {
+	r.t.Helper()
+	os.MkdirAll(filepath.Join(r.data, "worktrees"), 0o700)
+	f, err := os.OpenFile(filepath.Join(r.data, "worktrees", session+".lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		r.t.Fatalf("the lock is already held: %v", err)
+	}
+	return func() { syscall.Flock(int(f.Fd()), syscall.LOCK_UN); f.Close() }
+}
+
+// moveTip makes the session's branch point to a new commit.
+func (r *repo) moveTip(session string) {
+	r.t.Helper()
+	c := strings.TrimSpace(gitIn(r.t, r.dir, "commit-tree", "-m", "moved", "HEAD^{tree}"))
+	gitIn(r.t, r.dir, "update-ref", "refs/heads/delegate/"+session, c)
+}
+
+func TestIntegrationWorkspaceContract(t *testing.T) {
+	kanjotest.WorkspaceContract(t, fixtureFor)
+}
+
+func owned(r *repo, w core.Workdir) core.Owned {
+	return core.Owned{Session: w.Session, Branch: core.BranchOf(w.Session), Dir: core.DirOf(w.Session), Tip: r.state(w).Head}
+}
+
+func branches(t *testing.T, r *repo) string {
+	return gitIn(t, r.dir, "branch", "--list", "--format=%(refname:short)")
+}
+
+func TestIntegrationRemoveRefusesForeignBranch(t *testing.T) {
+	r := newRepo(t, true)
+	// a branch and a worktree the user made, with the shape of ours
+	gitIn(t, r.dir, "branch", "delegate/mine")
+	mine := filepath.Join(t.TempDir(), "mine")
+	gitIn(t, r.dir, "worktree", "add", "-q", "-b", "other", mine, "HEAD")
+	tip := strings.TrimSpace(gitIn(t, r.dir, "rev-parse", "HEAD"))
+	ctx := context.Background()
+	for _, bad := range []core.Owned{
+		{Session: "mine", Branch: "other", Dir: "worktrees/mine", Tip: tip},
+		{Session: "other", Branch: "other", Dir: mine, Tip: tip},
+		{Session: "x", Branch: "delegate/x", Dir: "../mine", Tip: tip},
+	} {
+		if err := r.ws.Remove(ctx, bad); !errors.Is(err, core.ErrNotOurs) {
+			t.Errorf("Remove(%+v) = %v", bad, err)
+		}
+	}
+	if _, err := os.Stat(mine); err != nil || !strings.Contains(branches(t, r), "other") {
+		t.Fatal("the user's worktree or branch was touched")
+	}
+}
+
+func TestIntegrationRemoveRefusesMovedTip(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_moved")
+	r.ws.Release(w)
+	o := owned(r, w)
+	writeFile(t, filepath.Join(w.Dir, "work.txt"), "uncommitted")
+	r.moveTip("ses_moved")
+	if err := r.ws.Remove(context.Background(), o); !errors.Is(err, core.ErrMoved) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(w.Dir, "work.txt")); err != nil || !strings.Contains(branches(t, r), "delegate/ses_moved") {
+		t.Fatal("something was deleted")
+	}
+}
+
+func TestIntegrationRemoveRefusesAReplacedFolder(t *testing.T) {
+	r := newRepo(t, true)
+	a, b := r.create("ses_a"), r.create("ses_b")
+	r.ws.Release(a)
+	r.ws.Release(b)
+	oa := owned(r, a)
+	if err := os.RemoveAll(a.Dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(b.Dir, a.Dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.ws.Remove(context.Background(), oa); !errors.Is(err, core.ErrNotOurs) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(b.Dir, "README.md")); err != nil {
+		t.Fatal("the other worktree was damaged")
+	}
+	if p, err := r.ws.Inspect(context.Background(), oa); !errors.Is(err, core.ErrNotOurs) {
+		t.Fatalf("Inspect: %+v %v", p, err)
+	}
+}
+
+func TestIntegrationRemoveDoesNotFollowLinks(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_links")
+	r.ws.Release(w)
+	keep := t.TempDir()
+	writeFile(t, filepath.Join(keep, "canary.txt"), "alive")
+	os.Symlink(keep, filepath.Join(w.Dir, "ln"))
+	os.Symlink(filepath.Join(keep, "canary.txt"), filepath.Join(w.Dir, "ln-file"))
+	if err := r.ws.Remove(context.Background(), owned(r, w)); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(keep, "canary.txt")); err != nil || string(b) != "alive" {
+		t.Fatal("Remove followed a link")
+	}
+	if _, err := os.Lstat(w.Dir); err == nil {
+		t.Fatal("the worktree is still there")
+	}
+}
+
+func TestIntegrationRemoveDeletesDirtyWorktreeAndItsBranch(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_dirty")
+	r.ws.Release(w)
+	writeFile(t, filepath.Join(w.Dir, "new.txt"), "x")
+	writeFile(t, filepath.Join(w.Dir, "README.md"), "edited")
+	o := owned(r, w)
+	if err := r.ws.Remove(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(w.Dir); err == nil {
+		t.Fatal("folder remains")
+	}
+	if strings.Contains(branches(t, r), "delegate/ses_dirty") {
+		t.Fatal("branch remains")
+	}
+	if _, err := os.Lstat(filepath.Join(r.data, "worktrees", "ses_dirty.lock")); err == nil {
+		t.Fatal("lock file remains")
+	}
+	if strings.Contains(gitIn(t, r.dir, "worktree", "list", "--porcelain"), "ses_dirty") {
+		t.Fatal("git still lists the worktree")
+	}
+}
+
+func TestIntegrationRemoveTwiceSucceeds(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_twice")
+	r.ws.Release(w)
+	o := owned(r, w)
+	for i := 0; i < 2; i++ {
+		if err := r.ws.Remove(context.Background(), o); err != nil {
+			t.Fatalf("Remove #%d: %v", i+1, err)
+		}
+	}
+}
+
+func TestIntegrationLockIsHeldWhileRunning(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_busy")
+	o := owned(r, w)
+	other := gitworktree.New(r.dir, r.data) // another process-like handle
+	if err := other.Remove(context.Background(), o); !errors.Is(err, core.ErrBusy) {
+		t.Fatalf("err = %v", err)
+	}
+	if p, _ := other.Inspect(context.Background(), o); !p.Busy {
+		t.Fatalf("presence = %+v", p)
+	}
+}
+
+var heldLock *os.File
+
+// TestHelperHoldLock is a child process that holds a run lock until killed.
+func TestHelperHoldLock(t *testing.T) {
+	path := os.Getenv("KANJO_HOLD_LOCK")
+	if path == "" {
+		t.Skip("helper process")
+	}
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil || syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+		os.Exit(3)
+	}
+	heldLock = f // a file that is garbage collected is closed, and its lock with it
+	os.Stdout.WriteString("locked\n")
+	time.Sleep(time.Hour) // not select{}: the runtime would call that a deadlock and exit
+}
+
+func TestIntegrationLockIsFreedWhenTheHolderIsKilled(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_killed")
+	r.ws.Release(w)
+	o := owned(r, w)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperHoldLock$")
+	cmd.Env = append(os.Environ(), "KANJO_HOLD_LOCK="+filepath.Join(r.data, "worktrees", "ses_killed.lock"))
+	out, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	buf := make([]byte, 7)
+	if _, err := io.ReadFull(out, buf); err != nil || string(buf) != "locked\n" {
+		t.Fatalf("helper said %q (%v)", buf, err)
+	}
+	if err := r.ws.Remove(context.Background(), o); !errors.Is(err, core.ErrBusy) {
+		t.Fatalf("while held: %v", err)
+	}
+	cmd.Process.Kill()
+	cmd.Wait()
+	if err := r.ws.Remove(context.Background(), o); err != nil {
+		t.Fatalf("after the holder died: %v", err)
+	}
+}
+
+func TestIntegrationInspectReportsPresence(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_insp")
+	r.ws.Release(w)
+	o := owned(r, w)
+	p, err := r.ws.Inspect(context.Background(), o)
+	if err != nil || p != (core.Presence{DirExists: true, BranchExists: true, TipMatches: true}) {
+		t.Fatalf("presence %+v err %v", p, err)
+	}
+	r.ws.Remove(context.Background(), o)
+	if p, _ := r.ws.Inspect(context.Background(), o); p != (core.Presence{}) {
+		t.Fatalf("after Remove %+v", p)
+	}
+}
+
+func TestIntegrationMainRepositoryIsUntouched(t *testing.T) {
+	r := newRepo(t, true)
+	snap := func() string {
+		return gitIn(t, r.dir, "status", "--porcelain") + gitIn(t, r.dir, "branch", "--list") + gitIn(t, r.dir, "log", "--oneline", "--all")
+	}
+	before := snap()
+	w := r.create("ses_main")
+	writeFile(t, filepath.Join(w.Dir, "new.txt"), "x")
+	os.Remove(filepath.Join(w.Dir, "gone.txt"))
+	var buf bytes.Buffer
+	r.ws.Diff(context.Background(), w, r.state(w), &buf, 1<<20)
+	r.ws.Release(w)
+	if err := r.ws.Remove(context.Background(), owned(r, w)); err != nil {
+		t.Fatal(err)
+	}
+	if after := snap(); after != before {
+		t.Fatalf("the repository changed:\nbefore %s\nafter %s", before, after)
+	}
+	if b, _ := os.ReadFile(filepath.Join(r.dir, "gone.txt")); string(b) != "bye\n" {
+		t.Fatal("a file of the main checkout changed")
 	}
 }

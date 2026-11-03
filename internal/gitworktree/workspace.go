@@ -277,3 +277,129 @@ func (w *Workspace) Diff(ctx context.Context, wd core.Workdir, to core.State, ds
 	}
 	return err
 }
+
+var _ core.Workspace = (*Workspace)(nil)
+
+// ownedPaths checks that o names a session's own branch and folder, derived
+// from the session and nothing else.
+func (w *Workspace) ownedPaths(o core.Owned) error {
+	if !core.ValidSession(o.Session) || o.Branch != core.BranchOf(o.Session) || o.Dir != core.DirOf(o.Session) || (o.Tip != "" && !core.ValidCommitID(o.Tip)) {
+		return core.ErrNotOurs
+	}
+	return nil
+}
+
+// probe says what exists of an owned workspace. A folder that is not a real
+// directory, that git does not list as a worktree on the session's branch, or
+// whose resolved path is not the derived one is not ours.
+func (w *Workspace) probe(ctx context.Context, o core.Owned) (core.Presence, error) {
+	if err := w.ownedPaths(o); err != nil {
+		return core.Presence{}, err
+	}
+	var p core.Presence
+	dir := w.dirOf(o.Session)
+	fi, err := os.Lstat(dir)
+	switch {
+	case err == nil:
+		if !fi.IsDir() {
+			return p, core.ErrNotOurs // a link, a file: never followed
+		}
+		if err := w.listedOnBranch(ctx, dir, o.Branch); err != nil {
+			return p, err
+		}
+		p.DirExists = true
+	case !errors.Is(err, fs.ErrNotExist):
+		return p, err
+	}
+	tip, err := w.git(ctx, w.repo, nil, "rev-parse", "--verify", "--quiet", "--end-of-options", "refs/heads/"+o.Branch+"^{commit}")
+	switch {
+	case err == nil:
+		p.BranchExists, p.TipMatches = true, tip == o.Tip
+	case exitCode(err) != 1:
+		return p, err
+	}
+	p.Busy, err = w.busy(o.Session)
+	return p, err
+}
+
+// listedOnBranch checks that git lists dir as a worktree checked out on branch.
+func (w *Workspace) listedOnBranch(ctx context.Context, dir, branch string) error {
+	real, err := filepath.EvalSymlinks(filepath.Dir(dir))
+	if err != nil {
+		return core.ErrNotOurs
+	}
+	want := filepath.Join(real, filepath.Base(dir))
+	out, err := w.git(ctx, w.repo, nil, "worktree", "list", "--porcelain")
+	if err != nil {
+		return err
+	}
+	for _, block := range strings.Split(out, "\n\n") {
+		var path, br string
+		for _, line := range strings.Split(block, "\n") {
+			if v, ok := strings.CutPrefix(line, "worktree "); ok {
+				path = v
+			}
+			if v, ok := strings.CutPrefix(line, "branch "); ok {
+				br = v
+			}
+		}
+		if p, err := filepath.EvalSymlinks(path); err == nil && p == want && br == "refs/heads/"+branch {
+			return nil
+		}
+	}
+	return core.ErrNotOurs
+}
+
+// busy tries the run lock without waiting; it creates nothing.
+func (w *Workspace) busy(session string) (bool, error) {
+	f, err := os.OpenFile(w.lockOf(session), os.O_RDWR|syscall.O_NOFOLLOW, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	switch err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); {
+	case errors.Is(err, syscall.EWOULDBLOCK):
+		return true, nil
+	case err != nil:
+		return false, err
+	}
+	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return false, nil
+}
+
+// Inspect implements core.Workspace.
+func (w *Workspace) Inspect(ctx context.Context, o core.Owned) (core.Presence, error) {
+	return w.probe(ctx, o)
+}
+
+// Remove implements core.Workspace. It deletes the worktree (git removes a
+// link, it does not follow it), then the branch only if it still points to the
+// recorded tip, then the lock file.
+func (w *Workspace) Remove(ctx context.Context, o core.Owned) error {
+	p, err := w.probe(ctx, o)
+	switch {
+	case err != nil:
+		return err
+	case p.Busy:
+		return core.ErrBusy
+	case p.BranchExists && !p.TipMatches:
+		return core.ErrMoved
+	}
+	if p.DirExists {
+		if _, err := w.git(ctx, w.repo, nil, "worktree", "remove", "--force", "--", w.dirOf(o.Session)); err != nil {
+			return err
+		}
+	}
+	if p.BranchExists {
+		if _, err := w.git(ctx, w.repo, nil, "update-ref", "-d", "refs/heads/"+o.Branch, o.Tip); err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(w.lockOf(o.Session)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
