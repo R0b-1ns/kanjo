@@ -224,6 +224,24 @@ func sandboxCases(p SandboxProbe) []contractCase[func(env []string) core.Sandbox
 				t.Fatal("killed before Grace ended")
 			}
 		}},
+		{"Cmd.Env is added to the box environment for that command only", func(t *testing.T, open func([]string) core.Sandbox) {
+			box := openBox(t, open([]string{"KANJO_BOX=1"}), []string{"KANJO_BOX=1"})
+			run := func(extra []string) string {
+				out := &lockedBuffer{}
+				cmd := p.PrintEnv()
+				cmd.Out, cmd.Env = out, extra
+				if _, err := box.Exec(context.Background(), cmd); err != nil {
+					t.Fatal(err)
+				}
+				return out.String()
+			}
+			if got := run([]string{"KANJO_CMD=yes"}); !strings.Contains(got, "KANJO_CMD=yes") || !strings.Contains(got, "KANJO_BOX=1") {
+				t.Errorf("environment:\n%s", got)
+			}
+			if got := run(nil); strings.Contains(got, "KANJO_CMD") {
+				t.Errorf("the extra variable outlived its command:\n%s", got)
+			}
+		}},
 		{"Out receives the output", func(t *testing.T, open func([]string) core.Sandbox) {
 			box := openBox(t, open([]string{"KANJO_OUT=seen"}), []string{"KANJO_OUT=seen"})
 			out := &lockedBuffer{}

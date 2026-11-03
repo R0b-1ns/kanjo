@@ -86,6 +86,9 @@ type Box interface {
 type Cmd struct {
 	Argv  []string
 	Shell string
+	// Env adds variables to the box environment for this command only. An
+	// adapter keeps its own private HOME and TMPDIR whatever Env says.
+	Env   []string
 	Stdin io.Reader
 	Out   io.Writer // stdout and stderr, written by the adapter; the caller caps it
 	Grace time.Duration

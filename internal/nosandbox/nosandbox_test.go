@@ -250,3 +250,15 @@ func TestACommandNeedsExactlyOneForm(t *testing.T) {
 		}
 	}
 }
+
+func TestCmdEnvIsAddedButCannotOverridePrivateFolders(t *testing.T) {
+	box, _ := open(t, "A=1")
+	var out bytes.Buffer
+	if _, err := box.Exec(context.Background(), core.Cmd{Argv: []string{"/usr/bin/env"}, Env: []string{"B=2", "HOME=/etc", "TMPDIR=/etc"}, Out: &out}); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "A=1\n") || !strings.Contains(got, "B=2\n") || strings.Contains(got, "=/etc") {
+		t.Fatalf("env:\n%s", got)
+	}
+}

@@ -21,7 +21,7 @@ func probeFake() (func(t *testing.T, env []string) core.Sandbox, kanjotest.Sandb
 			n, _ := strconv.Atoi(cmd.Argv[1])
 			return core.ExecResult{Exit: n}
 		case "probe-env":
-			for _, e := range spec.Env {
+			for _, e := range append(append([]string{}, spec.Env...), cmd.Env...) {
 				cmd.Out.Write([]byte(e + "\n"))
 			}
 			return core.ExecResult{}

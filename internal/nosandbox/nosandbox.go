@@ -49,21 +49,25 @@ func (Sandbox) Open(_ context.Context, spec core.BoxSpec) (core.Box, error) {
 		os.RemoveAll(private)
 		return nil, err
 	}
-	env := make([]string, 0, len(spec.Env)+2)
-	for _, e := range spec.Env {
+	return &box{dir: spec.Dir, env: withoutPrivate(spec.Env), private: private, home: home, tmp: tmp}, nil
+}
+
+// withoutPrivate drops any HOME or TMPDIR: the box sets its own.
+func withoutPrivate(env []string) []string {
+	out := make([]string, 0, len(env)+2)
+	for _, e := range env {
 		if !strings.HasPrefix(e, "HOME=") && !strings.HasPrefix(e, "TMPDIR=") {
-			env = append(env, e)
+			out = append(out, e)
 		}
 	}
-	env = append(env, "HOME="+home, "TMPDIR="+tmp)
-	return &box{dir: spec.Dir, env: env, private: private}, nil
+	return out
 }
 
 type box struct {
-	dir, private string
-	env          []string
-	mu           sync.Mutex
-	closed       bool
+	dir, private, home, tmp string
+	env                     []string
+	mu                      sync.Mutex
+	closed                  bool
 }
 
 func (b *box) isClosed() bool {
@@ -96,7 +100,8 @@ func (b *box) Exec(ctx context.Context, c core.Cmd) (core.ExecResult, error) {
 		argv = []string{"/bin/sh", "-c", c.Shell}
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir, cmd.Env, cmd.Stdin = b.dir, b.env, c.Stdin
+	cmd.Dir, cmd.Stdin = b.dir, c.Stdin
+	cmd.Env = append(append(append([]string{}, b.env...), withoutPrivate(c.Env)...), "HOME="+b.home, "TMPDIR="+b.tmp)
 	cmd.Stdout, cmd.Stderr = c.Out, c.Out
 	if c.Out == nil {
 		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
