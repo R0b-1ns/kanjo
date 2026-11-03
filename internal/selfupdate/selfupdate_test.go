@@ -509,3 +509,20 @@ func TestAssetsMustBelongToTheRepositoryRelease(t *testing.T) {
 		}
 	}
 }
+
+// self-update orders releases by the timestamp in their tag, so the stamp must
+// be the build time (monotonic, release runs are serialized), not a committer
+// date that a crafted commit could set in the future.
+func TestReleaseWorkflowStampsTagsWithBuildTime(t *testing.T) {
+	data, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := string(data)
+	if !strings.Contains(wf, "date -u +%Y%m%d%H%M%S") || strings.Contains(wf, "--format=%cd") {
+		t.Fatal("the release tag stamp must come from `date -u`, not from the commit date")
+	}
+	if !strings.Contains(wf, `tag=v0.0.0-${stamp}-$(git rev-parse --short=12 HEAD)`) {
+		t.Fatal("the release tag format must match what self-update parses")
+	}
+}
