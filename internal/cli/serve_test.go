@@ -246,3 +246,14 @@ func sameAsCSV(t *testing.T, groups []web.GroupData, csvText string) {
 		}
 	}
 }
+
+func TestServeAcceptsTheHighestPort(t *testing.T) {
+	w := newWorld(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // stop at once: only the port check matters
+	var out, errb bytes.Buffer
+	code := run([]string{"serve", "--port", "65535"}, &out, &errb, env{home: w.home, cwd: w.cwd, clock: kanjotest.FixedClock{T: fixedNow}, ctx: ctx})
+	if code == 2 {
+		t.Fatalf("65535 is a valid port: %s", errb.String())
+	}
+}

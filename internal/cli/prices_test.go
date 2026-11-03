@@ -113,3 +113,14 @@ func TestPricesNeedsTheCheckSubcommand(t *testing.T) {
 		}
 	}
 }
+
+func TestPricesCheckAllRefusesAnUnreadableProject(t *testing.T) {
+	w := newWorld(t)
+	_, b := w.twoProjects()
+	w.pricesFetched("2026-11-01")
+	write(t, filepath.Join(b, ".ai-usage", "kanjo.db"), "garbage that is not a sqlite database at all, padded to be long enough........")
+	code, out, errb := w.run("prices", "check", "--all")
+	if code != 1 || !strings.Contains(errb, "project app-b could not be read") || strings.Contains(out, "has no price") {
+		t.Fatalf("a check that skips unreadable data would wrongly say all is priced: code %d out %q err %q", code, out, errb)
+	}
+}

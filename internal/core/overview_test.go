@@ -120,3 +120,11 @@ func TestValidateAll(t *testing.T) {
 		t.Error("a bad --since must be refused")
 	}
 }
+
+func TestAggregateProjectsKeepsAnUnpricedProjectUnpriced(t *testing.T) {
+	ps := []core.ProjectUsage{{Name: "only-unknown", Rows: []core.UsageRow{urow("s", "2026-11-03", "-", "unknown", 3, 5)}}}
+	rep := core.AggregateProjects(ps, prices(), core.Query{By: "project"})
+	if len(rep.Groups) != 1 || rep.Groups[0].Priced || rep.Groups[0].UnpricedMessages != 3 || rep.Groups[0].USD != 0 {
+		t.Fatalf("a project with no priced row must not read as free: %+v", rep.Groups)
+	}
+}
