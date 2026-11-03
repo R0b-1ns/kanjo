@@ -1,15 +1,12 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 
 	"github.com/R0b-1ns/kanjo/internal/core"
-	"github.com/R0b-1ns/kanjo/internal/sqlitestore"
+	"github.com/R0b-1ns/kanjo/internal/projects"
 )
 
 const noData = "no data; run kanjo snapshot\n"
@@ -44,7 +41,7 @@ func usageCmd(args []string, stdout, stderr io.Writer, e env) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	rows, sessions, err := readStore(cfg.DataDir)
+	rows, sessions, err := projects.ReadStore(cfg.DataDir)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -62,23 +59,4 @@ func usageCmd(args []string, stdout, stderr io.Writer, e env) int {
 	}
 	writeText(stdout, q.By, rep, book)
 	return 0
-}
-
-// readStore reads every saved row without writing anything: a data folder
-// that does not exist yet reads as empty.
-func readStore(dir string) ([]core.UsageRow, []core.SessionInfo, error) {
-	st, err := sqlitestore.OpenReadOnly(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	defer st.Close()
-	rows, err := st.Rows(context.Background())
-	if err != nil {
-		return nil, nil, err
-	}
-	sessions, err := st.Sessions(context.Background())
-	return rows, sessions, err
 }
