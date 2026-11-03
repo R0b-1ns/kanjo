@@ -29,7 +29,7 @@ func usageFlags(fs *flag.FlagSet) *usageOpts {
 	fs.StringVar(&o.task, "task", "", "only this task label (default: all)")
 	fs.StringVar(&o.since, "since", "", "only days on or after this date, YYYY-MM-DD (default: all)")
 	fs.BoolVar(&o.csv, "csv", false, "print CSV instead of a table")
-	fs.StringVar(&o.dataDir, "data-dir", "", "data folder (default: data_dir from the config, ./.ai-usage)")
+	dataDirFlag(fs, &o.dataDir)
 	return o
 }
 

@@ -24,7 +24,7 @@ type pricesCheckOpts struct {
 func pricesCheckFlags(fs *flag.FlagSet) *pricesCheckOpts {
 	o := &pricesCheckOpts{}
 	fs.BoolVar(&o.all, "all", false, "also look for unpriced models in every project listed in projects in the user config")
-	fs.StringVar(&o.dataDir, "data-dir", "", "data folder (default: data_dir from the config, ./.ai-usage)")
+	dataDirFlag(fs, &o.dataDir)
 	return o
 }
 

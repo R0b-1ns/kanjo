@@ -21,7 +21,7 @@ type serveOpts struct {
 func serveFlags(fs *flag.FlagSet) *serveOpts {
 	o := &serveOpts{}
 	fs.IntVar(&o.port, "port", 0, "port on 127.0.0.1, 0 picks a free one (default: serve.port from the config, 8787)")
-	fs.StringVar(&o.dataDir, "data-dir", "", "data folder (default: data_dir from the config, ./.ai-usage)")
+	dataDirFlag(fs, &o.dataDir)
 	return o
 }
 

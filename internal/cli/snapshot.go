@@ -21,7 +21,7 @@ type snapshotOpts struct{ dataDir string }
 
 func snapshotFlags(fs *flag.FlagSet) *snapshotOpts {
 	o := &snapshotOpts{}
-	fs.StringVar(&o.dataDir, "data-dir", "", "data folder (default: data_dir from the config, ./.ai-usage)")
+	dataDirFlag(fs, &o.dataDir)
 	return o
 }
 

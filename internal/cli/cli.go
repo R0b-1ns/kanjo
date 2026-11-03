@@ -134,6 +134,11 @@ func parseFlags(fs *flag.FlagSet, args []string) int {
 	return proceed
 }
 
+// dataDirFlag registers --data-dir, shared by every command that reads data.
+func dataDirFlag(fs *flag.FlagSet, dir *string) {
+	fs.StringVar(dir, "data-dir", "", "data folder (default: data_dir from the config, ./.ai-usage)")
+}
+
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
