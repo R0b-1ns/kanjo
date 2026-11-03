@@ -43,6 +43,11 @@ function bars(node, groups, value, label) {
   if (groups.length === 0) node.appendChild(el("p", "note", "No data."));
 }
 
+function sourceLabel(source) {
+  if (source === "junior") return "Juniors";
+  return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
 function renderTotal(data) {
   byId("total").textContent = "$" + data.total_usd.toFixed(4);
   const split = byId("split");
@@ -58,10 +63,12 @@ function renderTotal(data) {
   }
   split.appendChild(chart);
   const legend = el("div", "legend");
-  for (const s of ["claude", "junior"]) {
+  // Claude and juniors are always listed; any other source with a cost too, so the legend adds up to the total.
+  const legendSources = ["claude", "junior", ...sources.filter((s) => s !== "claude" && s !== "junior")];
+  for (const s of legendSources) {
     const item = el("span");
-    item.appendChild(el("span", "swatch " + s));
-    item.appendChild(document.createTextNode((s === "claude" ? "Claude " : "Juniors ") + "$" + (data.usd_by_source[s] || 0).toFixed(4)));
+    item.appendChild(el("span", "swatch " + (s === "junior" ? "junior" : "claude")));
+    item.appendChild(document.createTextNode(sourceLabel(s) + " $" + (data.usd_by_source[s] || 0).toFixed(4)));
     legend.appendChild(item);
   }
   split.appendChild(legend);
@@ -125,18 +132,26 @@ function render(data) {
   byId("status").textContent = data.models.length === 0 ? "No usage for this selection. Run kanjo snapshot to save usage." : "";
 }
 
+let latestRequest = 0;
+
 async function refresh() {
+  const mine = ++latestRequest; // an older answer arriving late must not overwrite a newer one
   const query = new URLSearchParams({ scope: byId("scope").value });
   if (byId("task").value) query.set("task", byId("task").value);
   if (byId("since").value) query.set("since", byId("since").value);
   try {
     const res = await fetch("/api/data?" + query.toString());
     if (!res.ok) throw new Error("HTTP " + res.status);
-    render(await res.json());
+    const data = await res.json();
+    if (mine === latestRequest) render(data);
   } catch (err) {
-    byId("status").textContent = "Cannot load the data (" + err.message + ").";
+    if (mine === latestRequest) byId("status").textContent = "Cannot load the data (" + err.message + ").";
   }
 }
 
-for (const id of ["scope", "task", "since"]) byId(id).addEventListener("change", refresh);
+for (const id of ["task", "since"]) byId(id).addEventListener("change", refresh);
+byId("scope").addEventListener("change", () => {
+  byId("task").value = ""; // the tasks of the other scope are not this scope's
+  refresh();
+});
 refresh();
