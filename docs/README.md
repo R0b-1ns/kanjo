@@ -16,6 +16,8 @@ pages below describe what exists now.
 | [commands/snapshot.md](commands/snapshot.md) | `kanjo snapshot`: read transcripts into the data folder |
 | [commands/usage.md](commands/usage.md) | `kanjo usage`: report tokens and estimated cost |
 | [commands/serve.md](commands/serve.md) | `kanjo serve`: read-only report page and `/api/data` on 127.0.0.1 |
+| [commands/mark.md](commands/mark.md) | `kanjo mark`: say which task you are on |
+| [markers.md](markers.md) | Task markers: scopes, which task a message gets, edge cases, recompute |
 | [commands/prices-check.md](commands/prices-check.md) | `kanjo prices check`: age and coverage of the price file |
 | [projects.md](projects.md) | Several projects: the `projects` key, `usage --all`, the page scope |
 | [commands/self-update.md](commands/self-update.md) | `kanjo self-update`: install the latest release |
@@ -37,6 +39,8 @@ kanjo usage                          # table by task
 kanjo usage --by model --csv         # CSV by model
 kanjo usage --since 2026-11-01 --task ABC-12
 kanjo serve                          # read-only page on http://127.0.0.1:8787/
+kanjo mark start ABC-12              # from now on, usage goes to ABC-12
+kanjo mark end
 kanjo prices check                   # warns when prices are older than 30 days
 kanjo usage --all                    # every project listed in the user config
 ```
@@ -48,5 +52,5 @@ subscription bill.
 ## Not built yet
 
 Task delegation to other models, container sandbox, spending caps, routing,
-validated agent returns, task markers, the journal, cost per accepted task, and
+validated agent returns, the run and lead journals, cost per accepted task, and
 automatic price updates. See [spec.md](spec.md).

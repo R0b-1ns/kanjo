@@ -56,6 +56,9 @@ type Key struct {
 type UsageRow struct {
 	Key
 	Messages int64
+	// Marked is how many of Messages were attributed to the task by a marker
+	// (spec section 15); the others by the map, the heuristic or not at all.
+	Marked int64
 	Tokens
 	CostReportedUSD *float64
 }
@@ -102,6 +105,9 @@ func (r UsageRow) Validate() error {
 	}
 	if r.Messages < 0 {
 		return errors.New("messages is negative")
+	}
+	if r.Marked < 0 || r.Marked > r.Messages {
+		return errors.New("marked is outside 0..messages")
 	}
 	if err := r.Tokens.validate(); err != nil {
 		return err

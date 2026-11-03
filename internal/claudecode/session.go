@@ -50,6 +50,7 @@ type textBlock struct {
 }
 
 type message struct {
+	at         time.Time
 	day, model string
 	tokens     core.Tokens
 	prompt     int64
@@ -135,7 +136,7 @@ func (s Source) message(timestamp, model string, u usage) (message, bool) {
 	if probe.Validate() != nil {
 		return message{}, false
 	}
-	return message{day: day, model: model, tokens: t, prompt: t.Input + t.CacheRead + t.CacheWrite5m + t.CacheWrite1h}, true
+	return message{at: ts.UTC(), day: day, model: model, tokens: t, prompt: t.Input + t.CacheRead + t.CacheWrite5m + t.CacheWrite1h}, true
 }
 
 func (ss *session) user(raw []byte) {
@@ -204,22 +205,30 @@ func mostFrequent(labels map[string]int) string {
 	})
 }
 
-func (s Source) rows(sessionID, task string, msgs map[string]message) []core.UsageRow {
+// rows groups the messages into usage rows. A message goes to the task of the
+// marker active at its time, else to the session's fallback task.
+func (s Source) rows(sessionID, fallback string, msgs map[string]message) []core.UsageRow {
 	byKey := map[core.Key]*core.UsageRow{}
 	for _, m := range msgs {
 		long := s.LongContext != nil && s.LongContext(m.model, m.prompt)
+		task, marked := s.Markers.TaskAt(sessionID, m.at)
+		if !marked {
+			task = fallback
+		}
 		k := core.Key{Source: SourceName, Session: sessionID, Day: m.day, Task: task, Model: m.model, LongContext: long}
 		if byKey[k] == nil {
 			byKey[k] = &core.UsageRow{Key: k}
 		}
 		byKey[k].Messages++
+		if marked {
+			byKey[k].Marked++
+		}
 		byKey[k].Tokens = byKey[k].Tokens.Add(m.tokens)
 	}
 	rows := make([]core.UsageRow, 0, len(byKey))
 	for _, r := range byKey {
 		rows = append(rows, *r)
 	}
-	// The task is the same on every row, so this orders by day, model, tier.
 	slices.SortFunc(rows, func(a, b core.UsageRow) int {
 		return strings.Compare(fmt.Sprint(a.Key), fmt.Sprint(b.Key))
 	})

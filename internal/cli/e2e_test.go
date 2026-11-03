@@ -256,7 +256,7 @@ func TestHelpFlagExits0(t *testing.T) {
 
 func TestNoArgumentsExits2(t *testing.T) {
 	w := newWorld(t)
-	if code, out, errb := w.run(); code != 2 || out != "" || !strings.Contains(errb, "commands: prices, self-update, serve, snapshot, usage, version") {
+	if code, out, errb := w.run(); code != 2 || out != "" || !strings.Contains(errb, "commands: mark, prices, self-update, serve, snapshot, usage, version") {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errb)
 	}
 }
@@ -309,6 +309,16 @@ func TestCanaryNeverInOutputOrDatabase(t *testing.T) {
 	_, snapOut, snapErr := w.run("snapshot")
 	var all strings.Builder
 	all.WriteString(snapOut + snapErr)
+	// The journal takes labels and session ids typed by the user; a canary in
+	// a rejected one must come back nowhere.
+	for _, args := range [][]string{
+		{"mark", "start", "CANARY LEAK 7f3a"}, {"mark", "start", "ABC-99", "--session", "CANARY LEAK 7f3a/x"},
+		{"mark", "start", "ABC-99", "--session", "s-one"}, {"mark", "current", "--session", "s-one"}, {"mark", "end", "--session", "s-one"},
+	} {
+		_, out, errb := w.run(args...)
+		all.WriteString(out + errb)
+	}
+	w.must("snapshot")
 	for _, by := range []string{"task", "model", "day", "session"} {
 		_, out, errb := w.run("usage", "--by", by)
 		all.WriteString(out + errb)

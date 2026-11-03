@@ -20,6 +20,7 @@ type rendered struct {
 	ProjectsHidden                                                               bool
 	TokenRows                                                                    int
 	Legend                                                                       string
+	Attribution, AttributionWarn                                                 string
 }
 
 // runScript executes the real /app.js in node against a fake DOM, with the
@@ -149,5 +150,21 @@ func TestScriptSaysOneMessageInTheSingular(t *testing.T) {
 	ps := []core.ProjectUsage{{Name: "p", Rows: []core.UsageRow{urow("s", "2026-11-03", "-", "unknown", 1, core.Tokens{Output: 1})}}}
 	if r := runScript(t, loaderOf(ps), "project"); r.Unpriced != "1 message has no price and is not in the total." {
 		t.Fatalf("unpriced = %q", r.Unpriced)
+	}
+}
+
+func TestPageShowsAttributionAndHeuristicWarning(t *testing.T) {
+	ps := fixture()
+	ps[0].Rows[0].Marked = 2
+	ps[0].Sessions = []core.SessionInfo{{Source: "claude", Session: "a1", TaskSource: "heuristic", LabelsSeen: 1}}
+	r := runScript(t, loaderOf(ps), "project")
+	if r.Attribution != "Task attribution: 2 by marker, 0 by map, 1 by heuristic, 0 unattributed." ||
+		r.AttributionWarn != "1 message was given a task by guessing from your messages, not by a marker." {
+		t.Fatalf("attribution = %q, warning = %q", r.Attribution, r.AttributionWarn)
+	}
+	ps[0].Rows[0].Marked = 3
+	r = runScript(t, loaderOf(ps), "project")
+	if r.AttributionWarn != "" {
+		t.Fatalf("no warning expected when nothing is guessed, got %q", r.AttributionWarn)
 	}
 }

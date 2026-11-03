@@ -31,6 +31,9 @@ type Source struct {
 	TaskIgnore   []string          // labels the heuristic never reports (exact match)
 	TaskMap      map[string]string // session id prefix -> task; the longest prefix wins
 	MaxLineBytes int               // longer lines are skipped and counted
+	// Markers assigns messages to tasks by time (spec section 15); the zero
+	// value assigns nothing.
+	Markers core.Timeline
 	// LongContext tells whether a prompt of promptTokens is in the model's
 	// long-context price tier; nil means never.
 	LongContext func(model string, promptTokens int64) bool

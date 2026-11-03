@@ -68,6 +68,7 @@ Answer fields (the lists are never `null`):
 | `filter_tasks` | Every task of the data, ignoring the `task` filter, to fill the filter list |
 | `multi_task_sessions` | Sessions that named several tasks but are counted on one |
 | `projects` | With `scope=all`: one group per project; otherwise `[]` |
+| `attribution` | Object `{"marker", "map", "heuristic", "none"}`: message counts by how their task was found, over the selection (same numbers as the `attribution:` line of `usage`). The page shows them under the total, with a warning when `heuristic` is above 0 |
 | `failed_projects` | Names (never paths) of projects that could not be read |
 
 The totals come from the same function as [usage](usage.md): the page and

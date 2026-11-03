@@ -32,13 +32,14 @@ const (
 
 // Config is the resolved configuration. Paths are absolute when the inputs are.
 type Config struct {
-	DataDir    string       `toml:"data_dir"`
-	PricesFile string       `toml:"prices_file"`
-	Claude     ClaudeConfig `toml:"claude"`
-	Task       TaskConfig   `toml:"task"`
-	Projects   []string     `toml:"projects"`
-	Serve      ServeConfig  `toml:"serve"`
-	Prices     PricesConfig `toml:"prices"`
+	DataDir    string        `toml:"data_dir"`
+	PricesFile string        `toml:"prices_file"`
+	Claude     ClaudeConfig  `toml:"claude"`
+	Task       TaskConfig    `toml:"task"`
+	Projects   []string      `toml:"projects"`
+	Serve      ServeConfig   `toml:"serve"`
+	Prices     PricesConfig  `toml:"prices"`
+	Markers    MarkersConfig `toml:"markers"`
 
 	// trustedData is true when the user config set data_dir; a data_dir that
 	// comes from a repository or from the default is checked against symlinks.
@@ -69,6 +70,11 @@ type PricesConfig struct {
 	MaxAgeDays int `toml:"max_age_days"`
 }
 
+// MarkersConfig configures the task marker journal.
+type MarkersConfig struct {
+	MaxEvents int `toml:"max_events"`
+}
+
 // ProjectName is the name a project is shown under: its folder's base name.
 func ProjectName(folder string) string { return filepath.Base(folder) }
 
@@ -97,9 +103,10 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 			ProjectPrefixes: []string{ProjectFolderName(cwd)},
 			MaxLineBytes:    defaultMaxLineBytes,
 		},
-		Task:   TaskConfig{Pattern: DefaultTaskPattern, Ignore: slices.Clone(DefaultTaskIgnore)},
-		Serve:  ServeConfig{Port: 8787},
-		Prices: PricesConfig{MaxAgeDays: 30},
+		Task:    TaskConfig{Pattern: DefaultTaskPattern, Ignore: slices.Clone(DefaultTaskIgnore)},
+		Serve:   ServeConfig{Port: 8787},
+		Prices:  PricesConfig{MaxAgeDays: 30},
+		Markers: MarkersConfig{MaxEvents: 100000},
 	}
 	userDir := xdgConfigHome
 	if userDir == "" {
@@ -268,6 +275,9 @@ func (c Config) check() error {
 	}
 	if c.Prices.MaxAgeDays <= 0 {
 		return errors.New("prices.max_age_days must be positive")
+	}
+	if c.Markers.MaxEvents <= 0 {
+		return errors.New("markers.max_events must be positive")
 	}
 	if slices.Contains(c.Task.Ignore, "") {
 		return errors.New("task.ignore must not hold an empty entry")

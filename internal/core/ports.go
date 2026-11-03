@@ -27,11 +27,14 @@ type SnapshotLog struct {
 
 // Store persists usage rows and sessions.
 type Store interface {
-	// Merge saves b in one transaction. An incoming row replaces the stored
-	// rows that share its source, session, day, model and long_context
-	// (whatever their task), unless a stored one counts more messages: saved
-	// usage never shrinks, because sources purge old data. Stored rows with no
-	// incoming counterpart are kept. It also upserts b.Sessions and appends log.
+	// Merge saves b in one transaction. The unit of replacement is the slot
+	// (source, session, day, model, long_context), as a set of rows that may
+	// carry several tasks: when the incoming rows of a slot count at least as
+	// many messages in total as the stored ones, the stored rows of the slot
+	// are replaced by the incoming ones; otherwise the stored rows stay and
+	// the incoming ones are dropped, because sources purge old data and saved
+	// usage never shrinks. Stored slots with no incoming rows are kept. It
+	// also upserts b.Sessions and appends log.
 	Merge(ctx context.Context, b Batch, log SnapshotLog) error
 	Rows(ctx context.Context) ([]UsageRow, error)
 	Sessions(ctx context.Context) ([]SessionInfo, error)

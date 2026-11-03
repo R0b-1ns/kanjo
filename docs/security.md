@@ -25,7 +25,7 @@ instructions. Nothing from them is executed.
 | A future commit date blocks later updates | The release tag is stamped with the build time | `selfupdate.TestReleaseWorkflowStampsTagsWithBuildTime` |
 | An empty project prefix reads every project | Empty prefixes and empty prefix lists are rejected | `config.TestInvalidConfigIsRejected` |
 | Unsafe task map entry | Prefix and task validated, errors name the file and line | `claudecode.TestReadTaskMapRejectsBadLines`, `cli.TestBadTaskMapExits1NamingFileAndLine` |
-| A purged or partly purged transcript erases or shrinks saved history | Merge only replaces rows an incoming row supersedes and never with fewer messages; a session with no usable row is not recorded | `kanjotest` store contract ("rows the source no longer has are kept", "a smaller incoming row never shrinks saved usage"), `cli.TestSnapshotKeepsRowsOfPurgedTranscripts`, `cli.TestPartlyPurgedSessionNeverShrinksSavedUsage`, `claudecode.TestSessionWithoutUsableRowsIsNotListed` |
+| A purged or partly purged transcript erases or shrinks saved history | Merge replaces a slot (session, day, model, tier) only with at least as many messages, as a whole set of rows; a session with no usable row is not recorded | `kanjotest` store contract ("rows the source no longer has are kept", "a smaller incoming row never shrinks saved usage", "a smaller incoming slot never shrinks saved usage, whatever its tasks"), `cli.TestSnapshotKeepsRowsOfPurgedTranscripts`, `cli.TestPartlyPurgedSessionNeverShrinksSavedUsage`, `claudecode.TestSessionWithoutUsableRowsIsNotListed` |
 | A CSV cell that looks like a formula | Session ids, task labels and model ids cannot start with `-`, `=`, `+` or `@` | `core.TestUsageRowValidate` |
 | Reading reports needs write access, or creates files | `usage` opens the database read-only and never creates the folder | `cli.TestUsageWorksOnAReadOnlyDataFolder`, `cli.TestUsageBeforeAnySnapshotCreatesNothing`, `sqlitestore.TestOpenReadOnlyReadsButNeverWrites`, `sqlitestore.TestOpenReadOnlyNeverCreatesAnything` |
 | Reading another project's folder by a near-match prefix | A prefix matches a whole folder name or a `-` sub-name, in config and in a repository config | `claudecode.TestPrefixMatchesWholeNameOrSubFolderNames`, `config.TestRepoPrefixMustBeTheFolderNameOrASubName` |
@@ -49,6 +49,18 @@ instructions. Nothing from them is executed.
 | Page and CLI disagree on totals | Both call `core.Aggregate` | `cli.TestPageAndCLIGiveTheSameTotalsForTheProject`, `cli.TestPageAndCLIGiveTheSameTotalsForAllProjects` |
 | An unpriced model hidden as 0 on the page | `usd` is `null` and the group is labelled "no price"; the total ignores it | `web.TestUnpricedModelIsNullAndDoesNotChangeTheTotal` |
 | Old prices go unnoticed | `prices check` warns strictly above `prices.max_age_days`, lists unpriced models, never downloads | `cli.TestPricesCheckAtThirtyDaysDoesNotWarn`, `cli.TestPricesCheckAtThirtyOneDaysWarns`, `cli.TestPricesCheckListsUnpricedModelsOfTheData` |
+| Hostile marker label or session id (path traversal, formulas, huge text, control characters) | `core.ValidTask` and `core.ValidSession` before any use (`-` is refused as a task), when an event is saved and when it is read back; errors never repeat the value | `core.TestMarkerValidate`, `core.TestMarkerErrorsNeverEchoTheValue`, `cli.TestMarkUsageErrorsExit2`, `sqlitestore.TestHostileMarkerValuesStayData`, `sqlitestore.TestTamperedMarkerRowFailsTheRead`, `sqlitestore.TestTamperedMarkerTimeFailsTheRead`, `cli.TestSnapshotRefusesATamperedMarkerRow` |
+| A marker journal that grows without bound | `markers.max_events` (default 100000), checked in the same transaction as the append; starting the already active task writes nothing | `core.TestStartRefusedAtTheCap`, `cli.TestMarkStartAtTheCapExits1`, `cli.TestRepeatedStartWritesOnce` |
+| A cloned repository writes markers or lifts the cap | `kanjo.toml` cannot set `markers.max_events`; the journal is only written by `kanjo mark`, by the user | `config.TestRepoConfigMayNotSetMarkers`, `config.TestMarkersMaxEventsMustBePositive` |
+| Two `kanjo mark` at once lose or reorder an event | Read and append happen in one `BEGIN IMMEDIATE` transaction; the busy timeout makes the second wait | `kanjotest` journal contract ("concurrent updates are all kept and serialized"), run by `kanjotest.TestMemJournalContract` and `sqlitestore.TestJournalContract` |
+| A marker invents or corrupts a timeline (clock moved back, future event) | A start or end behind the scope's last event is refused; events are ordered by time then id; a future event only affects messages stamped after it | `core.TestStartRefusedWhenClockIsBehind`, `core.TestEndRefusedWhenClockIsBehind`, `core.TestClockBehindIsPerScope`, `core.TestFutureEventDoesNotAffectEarlierMessages`, `cli.TestMarkWithTheClockBehindExits1` |
+| A session marker takes another session's usage | A session-bound marker matches only its own session id | `core.TestSessionMarkerOnlyAffectsItsSession`, `claudecode.TestSessionBoundMarkerOnlyAppliesToItsSession` |
+| Content, a secret or a path in the journal | No free-text field exists (no `--note`); only a time, a kind, a validated label and a validated session id | `cli.TestCanaryNeverInOutputOrDatabase`, `cli.TestMarkStoresNoPathOrText` |
+| `kanjo.db` replaced by a link when marking | `mark` opens the database through the same checks as `snapshot` | `cli.TestMarkRefusesALinkedDatabase`, `sqlitestore.TestOpenRefusesSymlinkedFiles` |
+| `mark current` writes or creates files | It opens the database read-only and a missing database reads as "no active task" | `cli.TestMarkCurrentCreatesNothing`, `sqlitestore.TestReadOnlyStoreRefusesToAppend` |
+| Terminal control sequences in `mark` output | Labels are printed with non-printable characters replaced by `?` | `cli.TestMarkOutputCannotCarryEscapes` |
+| Old and new kanjo versions on one database | A version 1 database is upgraded in place by write commands and read as it is by read-only ones; a newer one is refused | `sqlitestore.TestMigratesVersion1KeepingRows`, `sqlitestore.TestOpenReadOnlyReadsVersion1WithoutMigrating`, `sqlitestore.TestOpenRejectsNewerSchema` |
+| The page and `usage` disagree on attribution | Both use `core.Aggregate` | `cli.TestPageAndCLIGiveTheSameAttribution` |
 | Secrets in logs | kanjo never reads credentials and never logs content; errors name files, lines or counts only | covered by the canary tests above |
 
 ## Residual risks
@@ -60,12 +72,15 @@ instructions. Nothing from them is executed.
 - Transcript files are opened by path after being listed; a file swapped for a symbolic link in between could be read. Only usage numbers are extracted from it.
 - `self-update` trusts GitHub's TLS and the repository's release assets. The attestation proves origin but is checked by you, not by the command ([release.md](release.md)).
 - A project's `.ai-usage` is checked for a link and then opened by path; a link swapped in between is not detected (the same check-then-use race as above). A hostile database is parsed by SQLite with the schema untrusted and read-only.
+- A marker whose time is in the future (a clock set wrong, an edited file) blocks new events in its scope until the clock reaches it, or until you delete the row by hand ([commands/mark.md](commands/mark.md)). It does not change usage already attributed.
+- A marker is trusted data in your data folder. A `kanjo.db` that a repository tracks in git could carry markers that mislabel usage; labels are validated, nothing is executed.
+- A marker added after Claude purged part of a day's transcripts does not apply to that day's saved usage ([markers.md](markers.md)).
 - `kanjo serve` has no authentication: any process of any user on the same machine can read the page and `/api/data` (counts, model names, task labels, project folder names). Do not run it on a shared host.
 - A browser tab on another site cannot read the page (no CORS, `Host` check), but a local program can; the data is the same as `kanjo usage` prints.
 - Commands run with your user rights. There is no sandbox yet.
 
 ## Not yet built
 
-Delegation to other models, container isolation, secret handling for agents, spending caps and agent-return
+The run and lead journals, delegation to other models, container isolation, secret handling for agents, spending caps and agent-return
 validation. The threats for those are in [spec.md](spec.md) sections 10 and 12
 and will be handled, with tests, in their own slices.

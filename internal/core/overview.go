@@ -65,6 +65,7 @@ func AggregateProjects(ps []ProjectUsage, pb PriceBook, q Query) Report {
 		out.Groups = append(out.Groups, g)
 		out.TotalUSD += rep.TotalUSD
 		out.UnpricedMessages += rep.UnpricedMessages
+		out.Attribution = out.Attribution.Add(rep.Attribution)
 		for src, usd := range rep.USDBySource {
 			if out.USDBySource == nil {
 				out.USDBySource = map[string]float64{}
