@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -26,12 +27,22 @@ type env struct {
 	home, cwd, xdg string
 	clock          core.Clock
 	update         selfupdate.Updater
+	ctx            context.Context // ends serve in tests; nil means only a signal ends it
+}
+
+func (e env) context() context.Context {
+	if e.ctx == nil {
+		return context.Background()
+	}
+	return e.ctx
 }
 
 type command func(args []string, stdout, stderr io.Writer, e env) int
 
 var commands = map[string]command{
+	"prices":      pricesCmd,
 	"self-update": selfUpdateCmd,
+	"serve":       serveCmd,
 	"snapshot":    snapshotCmd,
 	"usage":       usageCmd,
 	"version": func(_ []string, stdout, _ io.Writer, _ env) int {
@@ -117,6 +128,11 @@ func parseFlags(fs *flag.FlagSet, args []string) int {
 		return 2
 	}
 	return proceed
+}
+
+// dataDirFlag registers --data-dir, shared by every command that reads data.
+func dataDirFlag(fs *flag.FlagSet, dir *string) {
+	fs.StringVar(dir, "data-dir", "", "data folder (default: data_dir from the config, ./.ai-usage)")
 }
 
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {

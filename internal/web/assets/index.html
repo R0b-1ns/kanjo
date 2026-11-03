@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>kanjo</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <h1>kanjo</h1>
+  <div class="filters">
+    <label>Scope <select id="scope"><option value="project">This project</option><option value="all">All projects</option></select></label>
+    <label>Task <select id="task"><option value="">All tasks</option></select></label>
+    <label>Since <input id="since" type="date"></label>
+  </div>
+</header>
+<main>
+  <p id="status" role="status"></p>
+  <section class="card wide" aria-labelledby="h-total">
+    <h2 id="h-total">Estimated cost</h2>
+    <p class="big" id="total"></p>
+    <div id="split"></div>
+    <p id="unpriced"></p>
+    <p id="notice" class="note"></p>
+  </section>
+  <section class="card" aria-labelledby="h-models"><h2 id="h-models">Cost per model</h2><div id="models"></div></section>
+  <section class="card" aria-labelledby="h-tasks"><h2 id="h-tasks">Cost per task</h2><div id="tasks"></div><ul id="multi" class="warn"></ul></section>
+  <section class="card" aria-labelledby="h-days"><h2 id="h-days">Cost per day</h2><div id="days"></div></section>
+  <section class="card" aria-labelledby="h-output"><h2 id="h-output">Output tokens per model</h2><div id="output"></div></section>
+  <section class="card wide" aria-labelledby="h-tokens"><h2 id="h-tokens">All tokens per model (cache reads included)</h2><div class="scroll"><table id="tokens"></table></div></section>
+  <section class="card wide" id="projects-card" aria-labelledby="h-projects" hidden><h2 id="h-projects">Cost per project</h2><div id="projects"></div><ul id="failed" class="warn"></ul></section>
+</main>
+<footer><p id="prices" class="note"></p></footer>
+<script src="/app.js"></script>
+</body>
+</html>

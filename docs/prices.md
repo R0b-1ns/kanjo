@@ -70,8 +70,10 @@ they add nothing to the total. They are never counted as 0.
 ## Updating prices
 
 Edit the file by hand and change `fetched`. kanjo never downloads prices. For
-the embedded file, change `internal/pricesfile/prices.json` and rebuild. A
-`prices check` command that warns when the file is older than 30 days is
-planned, not built.
+the embedded file, change `internal/pricesfile/prices.json` and rebuild.
+[`kanjo prices check`](commands/prices-check.md) validates the file, warns when
+it is older than `prices.max_age_days` (default 30) and lists the models in your
+data that have no price. An automatic update with a review of the diff is not
+built.
 
 The estimate is at API list prices. It is not what a subscription costs.

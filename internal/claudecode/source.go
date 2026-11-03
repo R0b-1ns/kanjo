@@ -28,6 +28,7 @@ type Source struct {
 	ProjectsDir  string            // usually ~/.claude/projects
 	Prefixes     []string          // project folders to read: a name equal to one, or one plus "-" and more
 	TaskPattern  *regexp.Regexp    // nil disables the heuristic
+	TaskIgnore   []string          // labels the heuristic never reports (exact match)
 	TaskMap      map[string]string // session id prefix -> task; the longest prefix wins
 	MaxLineBytes int               // longer lines are skipped and counted
 	// LongContext tells whether a prompt of promptTokens is in the model's

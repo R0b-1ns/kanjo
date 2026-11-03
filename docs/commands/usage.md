@@ -5,14 +5,15 @@ Reports saved usage and its estimated cost. Reads only the database written by
 folder.
 
 ```
-kanjo usage [--by task|model|day|session] [--task LABEL] [--since YYYY-MM-DD] [--csv] [--data-dir DIR]
+kanjo usage [--all] [--by task|model|day|session|project] [--task LABEL] [--since YYYY-MM-DD] [--csv] [--data-dir DIR]
 ```
 
 ## Options
 
 | Option | Default | Values | Meaning |
 |---|---|---|---|
-| `--by` | `task` | `task`, `model`, `day`, `session` | Group rows by this field. For `task`, a label is cut at its first `/` (`ABC-12/part` counts under `ABC-12`) |
+| `--by` | `task` (`project` with `--all`) | `task`, `model`, `day`, `session`; with `--all`: `project`, `task`, `model`, `day` | Group rows by this field. For `task`, a label is cut at its first `/` (`ABC-12/part` counts under `ABC-12`). `session` is refused with `--all` (ids can collide across projects) |
+| `--all` | off | flag | Report every project listed in `projects` of the user config instead of this folder's data; see [../projects.md](../projects.md). A project that cannot be read is named on stderr and skipped |
 | `--task` | all tasks | a task label such as `ABC-12` or `ABC-12/review` | Keep rows whose task is this label or below it (`ABC-12` also selects `ABC-12/review`; `ABC-12/review` does not select `ABC-12/other`) |
 | `--since` | all days | `YYYY-MM-DD` | Keep only days on or after this date (UTC days, inclusive) |
 | `--csv` | off | flag | Print CSV on stdout instead of an aligned table |
@@ -71,6 +72,11 @@ When the database is missing or empty the exit code is 0 and the text
 `no data; run kanjo snapshot` is printed: on stdout normally, on stderr with
 `--csv` (stdout then holds only the CSV header, so it stays a valid CSV).
 
+With `--all`, rows of every configured project are reported together
+([../projects.md](../projects.md)); an unreadable project is named on stderr and
+skipped, and with no `projects` the text `no projects; set projects in the user
+config` is printed (exit 0).
+
 `usage` opens the database read-only: it creates nothing and works on a
 read-only data folder.
 
@@ -89,4 +95,6 @@ kanjo usage
 kanjo usage --by model
 kanjo usage --by day --since 2026-11-01 --csv > usage-by-day.csv
 kanjo usage --task ABC-12 --by session
+kanjo usage --all
+kanjo usage --all --by model --csv
 ```

@@ -12,8 +12,6 @@ import (
 	"github.com/R0b-1ns/kanjo/internal/pricesfile"
 )
 
-const estimateNotice = "Claude cost is an estimate at API list prices, not a subscription bill."
-
 // table is the report as records: a header, then one line per group. An
 // unpriced group has an empty est_usd, never 0.
 func table(by string, rep core.Report) [][]string {
@@ -56,7 +54,7 @@ func writeCSV(stdout, stderr io.Writer, by string, rep core.Report) int {
 	for _, line := range warnings(rep) {
 		fmt.Fprintln(stderr, line)
 	}
-	fmt.Fprintln(stderr, estimateNotice)
+	fmt.Fprintln(stderr, core.EstimateNotice)
 	return 0
 }
 
@@ -77,5 +75,5 @@ func writeText(w io.Writer, by string, rep core.Report, book *pricesfile.Book) {
 	for _, line := range warnings(rep) {
 		fmt.Fprintln(w, line)
 	}
-	fmt.Fprintf(w, "%s\nprices: %s, retrieved %s\n", estimateNotice, book.Source(), book.Fetched())
+	fmt.Fprintf(w, "%s\nprices: %s, retrieved %s\n", core.EstimateNotice, book.Source(), book.Fetched())
 }

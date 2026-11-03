@@ -28,7 +28,11 @@ folder.
 | `claude.project_prefixes` | array of strings | `[<current folder with every non-alphanumeric character replaced by "-">]` | 1 or more non-empty strings | A project folder is read when its name **equals** a prefix or **starts with the prefix plus `-`**. The default is `-Users-me-Project-app` for `/Users/me/Project/app`: it reads `-Users-me-Project-app` and `-Users-me-Project-app-api`, not `-Users-me-Project-app2`. A prefix ending in `-` reads only the sub-names. Claude Code writes `/` and `-` the same way, so a sibling folder `app-legacy` cannot be told from the sub-folder `app/legacy` |
 | `claude.max_line_bytes` | integer | `67108864` (64 MiB) | greater than 0 | Longer transcript lines are skipped and counted, never loaded |
 | `task.pattern` | string (regular expression, Go RE2 syntax) | `\b[A-Z][A-Z0-9]+-[0-9]+(\.[0-9]+)?\b` | any valid regex, or `""` to disable | Finds task labels such as `ABC-12` or `ABC-12.3` in the user's messages |
+| `task.ignore` | array of strings | `["UTF-8", "UTF-16", "SHA-1", "SHA-256", "SHA-512", "ISO-8601", "GPT-4"]` | no empty entry | Labels the heuristic never reports, compared exactly (case-sensitive, no pattern). Setting it replaces the default list; `[]` ignores nothing. **User file only** |
 | `task.map_file` | string | `<data_dir>/claude-tasks.tsv` | path | Manual map "session id prefix, tab, task"; see [claude-transcripts.md](claude-transcripts.md) |
+| `projects` | array of strings | `[]` | absolute folders, each with a distinct base name made of letters, digits, `.`, `_`, `-` | Projects read by `kanjo usage --all` and the page scope "all projects"; see [projects.md](projects.md). The data of a project is always `<folder>/.ai-usage/kanjo.db`. **User file only** |
+| `serve.port` | integer | `8787` | 1 to 65535 | Port of `kanjo serve` on 127.0.0.1; `--port` overrides it. **User file only** |
+| `prices.max_age_days` | integer | `30` | greater than 0 | `kanjo prices check` warns when the price file is strictly older than this. **User file only** |
 
 ## What a repository `kanjo.toml` may set
 
@@ -43,7 +47,7 @@ user file or pass the option.
 |---|---|
 | `data_dir`, `prices_file`, `task.map_file` | The path, once symbolic links are resolved, must be the current folder or inside it. A dangling symbolic link is refused |
 | `claude.project_prefixes` | Every prefix must equal the current folder's own project name (the default prefix) or start with it followed by `-`, so it can only widen to sub-folders of this project |
-| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern` | Not allowed (user config only) |
+| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern`, `task.ignore`, `projects`, `serve.port`, `prices.max_age_days` | Not allowed (user config only). A repository must not choose which other folders kanjo reads |
 
 The default `data_dir` (`.ai-usage`) follows the same rule when no user config
 or `--data-dir` sets it: if `.ai-usage` is a symbolic link leading outside the
@@ -68,6 +72,19 @@ User file (a repository `kanjo.toml` may not set `task.pattern`), a custom label
 pattern = '\bTASK-[0-9]+\b'
 ```
 
+Read several projects, serve the page on another port and warn after 14 days
+(user file only; `projects` is a top-level key and goes before any `[table]`):
+
+```toml
+projects = ["/home/me/work/app-a", "/home/me/work/app-b"]
+
+[serve]
+port = 9000
+
+[prices]
+max_age_days = 14
+```
+
 Disable the label heuristic (every session is filed under `-` unless the task
 map names it):
 
@@ -81,16 +98,25 @@ pattern = ""
 The default `task.pattern` matches any upper-case word, a dash and digits
 (`ABC-12`). It also matches `UTF-8`, `SHA-256`, `GPT-4` or `CVE-2024` when they
 appear in your messages, and the most frequent label wins, so a session can be
-filed under the wrong task. Restrict it to your tracker's project keys, or use
-the manual task map:
+filed under the wrong task. The first ones are dropped by `task.ignore`; add the
+others there (exact labels), restrict the pattern to your tracker's project
+keys, or use the manual task map:
 
 ```toml
 [task]
 pattern = '\b(?:ABC|XYZ)-[0-9]+\b'
 ```
 
+Extend the ignore list (it replaces the default, so repeat the defaults you want to keep):
+
+```toml
+[task]
+ignore = ["UTF-8", "SHA-256", "CVE-2024"]
+```
+
 ## Notes
 
 - `--data-dir` also moves the default task map (`<data_dir>/claude-tasks.tsv`).
 - Claude Code names a project folder after its path with every character other than a letter or digit replaced by `-` (`/a/.b/c_d` becomes `-a--b-c-d`).
+- `projects` is documented in [projects.md](projects.md); `serve.port` in [commands/serve.md](commands/serve.md); `prices.max_age_days` in [commands/prices-check.md](commands/prices-check.md).
 - Environment-variable and per-role routing configuration come with later slices.

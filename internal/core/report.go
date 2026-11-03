@@ -21,6 +21,21 @@ func (q Query) Validate() error {
 	default:
 		return fmt.Errorf("invalid --by %q: want task, model, day or session", q.By)
 	}
+	return q.validateFilters()
+}
+
+// ValidateAll checks a query over several projects: session ids can collide
+// across projects, so --by session is not offered, and project is.
+func (q Query) ValidateAll() error {
+	switch q.By {
+	case "project", "task", "model", "day":
+	default:
+		return fmt.Errorf("invalid --by %q: want project, task, model or day with --all", q.By)
+	}
+	return q.validateFilters()
+}
+
+func (q Query) validateFilters() error {
 	if q.Task != "" && !ValidTask(q.Task) {
 		return fmt.Errorf("invalid --task %q", q.Task)
 	}
@@ -44,6 +59,7 @@ type Group struct {
 type Report struct {
 	Groups             []Group
 	TotalUSD           float64
+	USDBySource        map[string]float64 // priced cost per row source (claude, junior, ...)
 	UnpricedMessages   int64
 	MultiLabelSessions []string // sessions that mentioned several task labels
 }
@@ -117,6 +133,10 @@ func (g *Group) add(r UsageRow, pb PriceBook, rep *Report) {
 	g.USD += usd
 	g.Priced = true
 	rep.TotalUSD += usd
+	if rep.USDBySource == nil {
+		rep.USDBySource = map[string]float64{}
+	}
+	rep.USDBySource[r.Source] += usd
 }
 
 type sessionRef struct{ source, session string }
