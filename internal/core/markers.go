@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"errors"
 	"slices"
 	"sort"
@@ -55,14 +56,6 @@ func (m Marker) validateKind() error {
 	return nil
 }
 
-// before orders markers by time, then id.
-func (m Marker) before(o Marker) bool {
-	if !m.At.Equal(o.At) {
-		return m.At.Before(o.At)
-	}
-	return m.ID < o.ID
-}
-
 // Timeline answers which task a marker assigns to an instant.
 type Timeline struct{ scopes map[string][]Marker }
 
@@ -78,13 +71,7 @@ func NewTimeline(ms []Marker) (Timeline, error) {
 	}
 	for _, s := range tl.scopes {
 		slices.SortFunc(s, func(a, b Marker) int {
-			switch {
-			case a.before(b):
-				return -1
-			case b.before(a):
-				return 1
-			}
-			return 0
+			return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.ID, b.ID))
 		})
 	}
 	return tl, nil

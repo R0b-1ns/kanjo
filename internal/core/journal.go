@@ -37,7 +37,7 @@ func StartTask(ctx context.Context, j Journal, clk Clock, session, task string, 
 		return Marker{}, false, err
 	}
 	err = j.Update(ctx, session, func(scope []Marker, total int) (*Marker, error) {
-		if last, ok := lastOf(scope); ok && last.Kind == MarkStart && last.Task == task {
+		if last := lastOf(scope); last.Kind == MarkStart && last.Task == task {
 			m = last
 			return nil, nil
 		}
@@ -58,7 +58,7 @@ func EndTask(ctx context.Context, j Journal, clk Clock, session string, maxEvent
 		return Marker{}, err
 	}
 	err = j.Update(ctx, session, func(scope []Marker, total int) (*Marker, error) {
-		if last, ok := lastOf(scope); !ok || last.Kind != MarkStart {
+		if lastOf(scope).Kind != MarkStart {
 			return nil, ErrNothingToEnd
 		}
 		if err := admit(scope, total, now, maxEvents); err != nil {
@@ -72,7 +72,7 @@ func EndTask(ctx context.Context, j Journal, clk Clock, session string, maxEvent
 
 // admit checks the clock against the scope's last event and the journal cap.
 func admit(scope []Marker, total int, now time.Time, maxEvents int) error {
-	if last, ok := lastOf(scope); ok && now.Before(last.At) {
+	if last := lastOf(scope); now.Before(last.At) { // the zero marker of an empty scope is in year 1
 		return fmt.Errorf("%w (%s)", ErrClockBehind, last.At.UTC().Format(MarkerTimeLayout))
 	}
 	if total >= maxEvents {
@@ -81,9 +81,10 @@ func admit(scope []Marker, total int, now time.Time, maxEvents int) error {
 	return nil
 }
 
-func lastOf(scope []Marker) (Marker, bool) {
+// lastOf is the scope's latest event, or the zero Marker (no kind, year 1).
+func lastOf(scope []Marker) Marker {
 	if len(scope) == 0 {
-		return Marker{}, false
+		return Marker{}
 	}
-	return scope[len(scope)-1], true
+	return scope[len(scope)-1]
 }

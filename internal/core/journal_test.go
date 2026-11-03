@@ -156,8 +156,8 @@ func TestStartRefusedAtTheCap(t *testing.T) {
 func TestStartRejectsAnInvalidLabelBeforeTouchingTheJournal(t *testing.T) {
 	j := &failingJournal{}
 	clk := clockAt{&t0}
-	if _, _, err := StartTask(bg, j, clk, "", "../x", 10); err == nil || j.called {
-		t.Errorf("err = %v, called = %v", err, j.called)
+	if _, started, err := StartTask(bg, j, clk, "", "../x", 10); err == nil || started || j.called {
+		t.Errorf("err = %v, started = %v, called = %v", err, started, j.called)
 	}
 	if _, _, err := StartTask(bg, j, clk, "-x", "A-1", 10); err == nil || j.called {
 		t.Errorf("session: err = %v, called = %v", err, j.called)
