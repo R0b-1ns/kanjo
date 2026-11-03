@@ -127,6 +127,19 @@ func validCommand(s string) bool {
 
 // Validate checks the request before anything is created.
 func (q DelegateRequest) Validate() error {
+	return firstError(q.validateNames(), q.validatePaths(), q.validateCommands(), q.validateLimits())
+}
+
+func firstError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (q DelegateRequest) validateNames() error {
 	switch {
 	case q.Task != "" && !ValidTask(q.Task):
 		return errors.New("invalid task label")
@@ -138,19 +151,33 @@ func (q DelegateRequest) Validate() error {
 		return errors.New("the prompt is empty")
 	case q.Ref != "" && !ValidRef(q.Ref):
 		return errors.New("invalid reference")
-	case !validPaths(q.Expect) || !validPaths(q.Forbid):
-		return errors.New("invalid --expect or --forbid path (or more than 64)")
-	case q.Setup != "" && !validCommand(q.Setup), q.Test != "" && !validCommand(q.Test):
-		return errors.New("invalid command")
-	case len(q.Checks) > MaxCheckLogs:
-		return errors.New("too many checks")
-	case q.Timeout <= 0 || q.CommandTimeout <= 0 || q.Grace < 0 || q.MaxPatchBytes <= 0:
-		return errors.New("invalid time or size limit")
 	}
-	for _, c := range q.Checks {
-		if !validCommand(c) {
+	return nil
+}
+
+func (q DelegateRequest) validatePaths() error {
+	if !validPaths(q.Expect) || !validPaths(q.Forbid) {
+		return errors.New("invalid --expect or --forbid path (or more than 64)")
+	}
+	return nil
+}
+
+func (q DelegateRequest) validateCommands() error {
+	if len(q.Checks) > MaxCheckLogs {
+		return errors.New("too many checks")
+	}
+	cmds := append([]string{q.Setup, q.Test}, q.Checks...)
+	for i, c := range cmds {
+		if (i < 2 && c != "" || i >= 2) && !validCommand(c) { // --setup and --test are optional, a check is not
 			return errors.New("invalid command")
 		}
+	}
+	return nil
+}
+
+func (q DelegateRequest) validateLimits() error {
+	if q.Timeout <= 0 || q.CommandTimeout <= 0 || q.Grace < 0 || q.MaxPatchBytes <= 0 {
+		return errors.New("invalid time or size limit")
 	}
 	return nil
 }

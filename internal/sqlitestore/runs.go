@@ -13,6 +13,8 @@ import (
 // formatTime stores a time as UTC with millisecond precision.
 func formatTime(t time.Time) string { return t.UTC().Format(core.MarkerTimeLayout) }
 
+func parseTime(s string) (time.Time, error) { return time.Parse(core.MarkerTimeLayout, s) }
+
 // Begin implements core.RunJournal.
 func (s *Store) Begin(ctx context.Context, r core.Run) error {
 	if err := r.Validate(); err != nil {
@@ -131,45 +133,55 @@ func (s *Store) Runs(ctx context.Context) ([]core.RunRecord, error) {
 	return out, rs.Err()
 }
 
+// runRow is a row of runs joined with its lead, as stored.
+type runRow struct {
+	id, durMS               int64
+	session, task, adapter  string
+	model, started, verdict string
+	finished, tip, leadAt   sql.NullString
+	leadVerdict             sql.NullString
+	exit                    sql.NullInt64
+	launches, retries       int
+	base, branch, dir       string
+	created                 int
+}
+
 func scanRun(rs *sql.Rows) (core.RunRecord, error) {
-	var (
-		rec                   core.RunRecord
-		id, durMS             int64
-		started, verdict      string
-		finished, tip, leadAt sql.NullString
-		leadVerdict           sql.NullString
-		exit                  sql.NullInt64
-		branch, dir           string
-		created               int
-	)
-	if err := rs.Scan(&id, &rec.Session, &rec.Task, &rec.Adapter, &rec.Model, &started, &finished, &verdict, &exit,
-		&rec.Launches, &rec.Retries, &durMS, &rec.Base, &tip, &branch, &dir, &created, &leadAt, &leadVerdict); err != nil {
-		return rec, err
+	var r runRow
+	if err := rs.Scan(&r.id, &r.session, &r.task, &r.adapter, &r.model, &r.started, &r.finished, &r.verdict, &r.exit,
+		&r.launches, &r.retries, &r.durMS, &r.base, &r.tip, &r.branch, &r.dir, &r.created, &r.leadAt, &r.leadVerdict); err != nil {
+		return core.RunRecord{}, err
 	}
-	bad := func(what string) error { return fmt.Errorf("stored run #%d %s", id, what) }
+	return r.record()
+}
+
+// record re-validates a stored row; an error never repeats a stored value.
+func (r runRow) record() (core.RunRecord, error) {
+	rec := core.RunRecord{Run: core.Run{Session: r.session, Task: r.task, Adapter: r.adapter, Model: r.model, Base: r.base}}
+	bad := func(what string) error { return fmt.Errorf("stored run #%d %s", r.id, what) }
 	var err error
-	if rec.StartedAt, err = time.Parse(core.MarkerTimeLayout, started); err != nil {
+	if rec.StartedAt, err = parseTime(r.started); err != nil {
 		return rec, bad("has an invalid time")
 	}
-	if finished.Valid {
-		if rec.FinishedAt, err = time.Parse(core.MarkerTimeLayout, finished.String); err != nil {
+	if r.finished.Valid {
+		if rec.FinishedAt, err = parseTime(r.finished.String); err != nil {
 			return rec, bad("has an invalid time")
 		}
 	}
-	rec.Verdict, rec.Exit, rec.Duration = core.RunVerdict(verdict), int(exit.Int64), time.Duration(durMS)*time.Millisecond
-	rec.Tip, rec.Created = tip.String, created == 1
-	if branch != core.BranchOf(rec.Session) || dir != core.DirOf(rec.Session) {
+	rec.Verdict, rec.Exit, rec.Duration = core.RunVerdict(r.verdict), int(r.exit.Int64), time.Duration(r.durMS)*time.Millisecond
+	rec.Launches, rec.Retries, rec.Tip, rec.Created = r.launches, r.retries, r.tip.String, r.created == 1
+	if r.branch != core.BranchOf(r.session) || r.dir != core.DirOf(r.session) {
 		return rec, bad("names a branch or folder that is not derived from its session")
 	}
-	if leadVerdict.Valid {
-		l := core.Lead{Session: rec.Session, Verdict: core.LeadVerdict(leadVerdict.String)}
-		if l.At, err = time.Parse(core.MarkerTimeLayout, leadAt.String); err != nil {
+	if r.leadVerdict.Valid {
+		l := core.Lead{Session: r.session, Verdict: core.LeadVerdict(r.leadVerdict.String)}
+		if l.At, err = parseTime(r.leadAt.String); err != nil {
 			return rec, bad("has a lead verdict with an invalid time")
 		}
 		rec.Lead = &l
 	}
 	if err := rec.Validate(); err != nil {
-		return rec, fmt.Errorf("stored run #%d is invalid: %w", id, err)
+		return rec, fmt.Errorf("stored run #%d is invalid: %w", r.id, err)
 	}
 	return rec, nil
 }

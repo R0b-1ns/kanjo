@@ -162,113 +162,136 @@ func execCancelled(t *testing.T, box core.Box, cmd core.Cmd, grace time.Duration
 	}
 }
 
-func sandboxCases(p SandboxProbe) []contractCase[func(env []string) core.Sandbox] {
-	return []contractCase[func(env []string) core.Sandbox]{
-		{"exit codes pass through", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open(nil), nil)
-			for _, n := range []int{0, 3, 42} {
-				res, err := box.Exec(context.Background(), p.Exit(n))
-				if err != nil || res.Exit != n || res.Killed {
-					t.Fatalf("exit %d: res = %+v, err %v", n, res, err)
-				}
-			}
-		}},
-		{"the command sees every BoxSpec.Env entry and no host variable", func(t *testing.T, open func([]string) core.Sandbox) {
-			t.Setenv("KANJO_HOST_CANARY", "leaked-value")
-			box := openBox(t, open([]string{"KANJO_ONE=1"}), []string{"KANJO_ONE=1", "KANJO_TWO=two"})
-			out := &lockedBuffer{}
-			cmd := p.PrintEnv()
-			cmd.Out = out
-			if res, err := box.Exec(context.Background(), cmd); err != nil || res.Exit != 0 {
-				t.Fatalf("res = %+v, err %v", res, err)
-			}
-			got := out.String()
-			for _, want := range []string{"KANJO_ONE=1", "KANJO_TWO=two"} {
-				if !strings.Contains(got, want) {
-					t.Errorf("environment lacks %q:\n%s", want, got)
-				}
-			}
-			if strings.Contains(got, "KANJO_HOST_CANARY") || strings.Contains(got, "leaked-value") {
-				t.Errorf("a host variable leaked into the box:\n%s", got)
-			}
-		}},
-		{"a cancelled context kills and sets Killed within the bound", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open(nil), nil)
-			res, _ := execCancelled(t, box, p.Sleep(), 100*time.Millisecond)
-			if !res.Killed {
-				t.Fatalf("res = %+v, want Killed", res)
-			}
-		}},
-		{"children are killed with the command", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open(nil), nil)
-			res, out := execCancelled(t, box, p.SpawnChild(), 100*time.Millisecond)
-			if !res.Killed {
-				t.Fatalf("res = %+v, want Killed", res)
-			}
-			deadline := time.Now().Add(probeBound)
-			for p.ChildAlive(out) && time.Now().Before(deadline) {
-				time.Sleep(20 * time.Millisecond)
-			}
-			if p.ChildAlive(out) {
-				t.Fatal("the child survived the kill")
-			}
-		}},
-		{"a command that ignores the polite signal is killed after Grace", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open(nil), nil)
-			start := time.Now()
-			res, _ := execCancelled(t, box, p.IgnoreTerm(), 300*time.Millisecond)
-			if !res.Killed {
-				t.Fatalf("res = %+v, want Killed", res)
-			}
-			if time.Since(start) < 300*time.Millisecond {
-				t.Fatal("killed before Grace ended")
-			}
-		}},
-		{"Cmd.Env is added to the box environment for that command only", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open([]string{"KANJO_BOX=1"}), []string{"KANJO_BOX=1"})
-			run := func(extra []string) string {
-				out := &lockedBuffer{}
-				cmd := p.PrintEnv()
-				cmd.Out, cmd.Env = out, extra
-				if _, err := box.Exec(context.Background(), cmd); err != nil {
-					t.Fatal(err)
-				}
-				return out.String()
-			}
-			if got := run([]string{"KANJO_CMD=yes"}); !strings.Contains(got, "KANJO_CMD=yes") || !strings.Contains(got, "KANJO_BOX=1") {
-				t.Errorf("environment:\n%s", got)
-			}
-			if got := run(nil); strings.Contains(got, "KANJO_CMD") {
-				t.Errorf("the extra variable outlived its command:\n%s", got)
-			}
-		}},
-		{"Out receives the output", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open([]string{"KANJO_OUT=seen"}), []string{"KANJO_OUT=seen"})
-			out := &lockedBuffer{}
-			cmd := p.PrintEnv()
-			cmd.Out = out
-			box.Exec(context.Background(), cmd)
-			if !strings.Contains(out.String(), "KANJO_OUT=seen") {
-				t.Fatalf("out = %q", out.String())
-			}
-		}},
-		{"exec after Close is refused", func(t *testing.T, open func([]string) core.Sandbox) {
-			box := openBox(t, open(nil), nil)
-			if err := box.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := box.Exec(context.Background(), p.Exit(0)); !errors.Is(err, core.ErrBoxClosed) {
-				t.Fatalf("err = %v", err)
-			}
-		}},
-		{"a relative or empty Dir is refused by Open", func(t *testing.T, open func([]string) core.Sandbox) {
-			for _, dir := range []string{"", "relative/dir", "."} {
-				if box, err := open(nil).Open(context.Background(), core.BoxSpec{Dir: dir}); err == nil {
-					box.Close()
-					t.Errorf("Dir %q accepted", dir)
-				}
-			}
-		}},
+// sandboxSuite holds the cases of the sandbox contract for one probe.
+type sandboxSuite struct{ p SandboxProbe }
+
+type sandboxOpen = func(env []string) core.Sandbox
+
+func sandboxCases(p SandboxProbe) []contractCase[sandboxOpen] {
+	s := sandboxSuite{p}
+	return []contractCase[sandboxOpen]{
+		{"exit codes pass through", s.exitCodes},
+		{"the command sees every BoxSpec.Env entry and no host variable", s.environment},
+		{"a cancelled context kills and sets Killed within the bound", s.cancelKills},
+		{"children are killed with the command", s.childrenDie},
+		{"a command that ignores the polite signal is killed after Grace", s.graceThenKill},
+		{"Cmd.Env is added to the box environment for that command only", s.cmdEnv},
+		{"Out receives the output", s.outReceives},
+		{"exec after Close is refused", s.closedRefuses},
+		{"a relative or empty Dir is refused by Open", s.badDir},
+	}
+}
+
+func (s sandboxSuite) exitCodes(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open(nil), nil)
+	for _, n := range []int{0, 3, 42} {
+		res, err := box.Exec(context.Background(), s.p.Exit(n))
+		if err != nil || res.Exit != n || res.Killed {
+			t.Fatalf("exit %d: res = %+v, err %v", n, res, err)
+		}
+	}
+}
+
+func (s sandboxSuite) environment(t *testing.T, open sandboxOpen) {
+	t.Setenv("KANJO_HOST_CANARY", "leaked-value")
+	box := openBox(t, open([]string{"KANJO_ONE=1"}), []string{"KANJO_ONE=1", "KANJO_TWO=two"})
+	out := &lockedBuffer{}
+	cmd := s.p.PrintEnv()
+	cmd.Out = out
+	if res, err := box.Exec(context.Background(), cmd); err != nil || res.Exit != 0 {
+		t.Fatalf("res = %+v, err %v", res, err)
+	}
+	got := out.String()
+	for _, want := range []string{"KANJO_ONE=1", "KANJO_TWO=two"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("environment lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "KANJO_HOST_CANARY") || strings.Contains(got, "leaked-value") {
+		t.Errorf("a host variable leaked into the box:\n%s", got)
+	}
+}
+
+func (s sandboxSuite) cancelKills(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open(nil), nil)
+	if res, _ := execCancelled(t, box, s.p.Sleep(), 100*time.Millisecond); !res.Killed {
+		t.Fatalf("res = %+v, want Killed", res)
+	}
+}
+
+func (s sandboxSuite) childrenDie(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open(nil), nil)
+	res, out := execCancelled(t, box, s.p.SpawnChild(), 100*time.Millisecond)
+	if !res.Killed {
+		t.Fatalf("res = %+v, want Killed", res)
+	}
+	deadline := time.Now().Add(probeBound)
+	for s.p.ChildAlive(out) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if s.p.ChildAlive(out) {
+		t.Fatal("the child survived the kill")
+	}
+}
+
+func (s sandboxSuite) graceThenKill(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open(nil), nil)
+	start := time.Now()
+	res, _ := execCancelled(t, box, s.p.IgnoreTerm(), 300*time.Millisecond)
+	if !res.Killed {
+		t.Fatalf("res = %+v, want Killed", res)
+	}
+	if time.Since(start) < 300*time.Millisecond {
+		t.Fatal("killed before Grace ended")
+	}
+}
+
+func (s sandboxSuite) cmdEnv(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open([]string{"KANJO_BOX=1"}), []string{"KANJO_BOX=1"})
+	run := func(extra []string) string {
+		out := &lockedBuffer{}
+		cmd := s.p.PrintEnv()
+		cmd.Out, cmd.Env = out, extra
+		if _, err := box.Exec(context.Background(), cmd); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	if got := run([]string{"KANJO_CMD=yes"}); !strings.Contains(got, "KANJO_CMD=yes") || !strings.Contains(got, "KANJO_BOX=1") {
+		t.Errorf("environment:\n%s", got)
+	}
+	if got := run(nil); strings.Contains(got, "KANJO_CMD") {
+		t.Errorf("the extra variable outlived its command:\n%s", got)
+	}
+}
+
+func (s sandboxSuite) outReceives(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open([]string{"KANJO_OUT=seen"}), []string{"KANJO_OUT=seen"})
+	out := &lockedBuffer{}
+	cmd := s.p.PrintEnv()
+	cmd.Out = out
+	box.Exec(context.Background(), cmd)
+	if !strings.Contains(out.String(), "KANJO_OUT=seen") {
+		t.Fatalf("out = %q", out.String())
+	}
+}
+
+func (s sandboxSuite) closedRefuses(t *testing.T, open sandboxOpen) {
+	box := openBox(t, open(nil), nil)
+	if err := box.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := box.Exec(context.Background(), s.p.Exit(0)); !errors.Is(err, core.ErrBoxClosed) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func (s sandboxSuite) badDir(t *testing.T, open sandboxOpen) {
+	for _, dir := range []string{"", "relative/dir", "."} {
+		if box, err := open(nil).Open(context.Background(), core.BoxSpec{Dir: dir}); err == nil {
+			box.Close()
+			t.Errorf("Dir %q accepted", dir)
+		}
 	}
 }
 

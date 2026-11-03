@@ -139,7 +139,7 @@ func unsafeLink(linkPath, target string) bool {
 type namer map[string]string
 
 func (n namer) label(name string) string {
-	if utf8.ValidString(name) && !strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	if utf8.ValidString(name) && !strings.ContainsFunc(name, isControl) {
 		return name
 	}
 	if l, ok := n[name]; ok {

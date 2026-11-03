@@ -39,21 +39,29 @@ func New(script, forbidden string) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("script: %w", err)
 	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	switch {
-	case !fi.Mode().IsRegular():
-		return nil, errors.New("the script must be a regular file, not a link or a folder")
-	case fi.Mode().Perm()&0o100 == 0:
-		return nil, errors.New("the script is not executable")
-	case fi.Mode().Perm()&0o022 != 0:
-		return nil, errors.New("the script is writable by group or others")
-	case !ok || int(st.Uid) != os.Getuid():
-		return nil, errors.New("the script is not owned by you")
+	if err := checkFile(fi); err != nil {
+		return nil, err
 	}
 	if forbidden != "" && inside(script, forbidden) {
 		return nil, errors.New("the script is inside the worktrees folder, which the agent can write to")
 	}
 	return &Agent{script: script}, nil
+}
+
+// checkFile wants a regular executable owned by the user and not writable by others.
+func checkFile(fi os.FileInfo) error {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	switch {
+	case !fi.Mode().IsRegular():
+		return errors.New("the script must be a regular file, not a link or a folder")
+	case fi.Mode().Perm()&0o100 == 0:
+		return errors.New("the script is not executable")
+	case fi.Mode().Perm()&0o022 != 0:
+		return errors.New("the script is writable by group or others")
+	case !ok || int(st.Uid) != os.Getuid():
+		return errors.New("the script is not owned by you")
+	}
+	return nil
 }
 
 // inside reports whether path is in root, both with symbolic links resolved.

@@ -96,13 +96,8 @@ func NewSessionID(now time.Time, rnd [3]byte) string {
 // path with no "." or ".." segment, no empty segment, no control character,
 // valid UTF-8, at most 256 bytes.
 func ValidRepoPath(p string) bool {
-	if p == "" || len(p) > 256 || !utf8.ValidString(p) {
+	if p == "" || len(p) > 256 || !utf8.ValidString(p) || strings.ContainsFunc(p, isControl) {
 		return false
-	}
-	for _, r := range p {
-		if r < 0x20 || r == 0x7f {
-			return false
-		}
 	}
 	for _, seg := range strings.Split(p, "/") {
 		if seg == "" || seg == "." || seg == ".." {
@@ -111,6 +106,8 @@ func ValidRepoPath(p string) bool {
 	}
 	return true
 }
+
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 
 // ValidRef reports whether s can be passed to git as a revision: no leading
 // "-", no space or control character, at most 200 bytes.
@@ -147,14 +144,20 @@ func (r RunResult) Validate() error {
 		return errors.New("invalid run verdict")
 	case (r.Verdict == RunRunning) != r.FinishedAt.IsZero():
 		return errors.New("a run has a finish time exactly when it is final")
-	case r.Launches < 0 || r.Launches > 2:
-		return errors.New("launches is outside 0..2")
-	case r.Retries < 0 || r.Retries > 1 || r.Retries > r.Launches:
-		return errors.New("retries is outside 0..1 or above launches")
 	case r.Duration < 0:
 		return errors.New("duration is negative")
 	case r.Tip != "" && !ValidCommitID(r.Tip):
 		return errors.New("invalid tip commit")
+	}
+	return r.validateCounts()
+}
+
+func (r RunResult) validateCounts() error {
+	switch {
+	case r.Launches < 0 || r.Launches > 2:
+		return errors.New("launches is outside 0..2")
+	case r.Retries < 0 || r.Retries > 1 || r.Retries > r.Launches:
+		return errors.New("retries is outside 0..1 or above launches")
 	}
 	return nil
 }

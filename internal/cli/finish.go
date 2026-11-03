@@ -10,7 +10,6 @@ import (
 
 	"github.com/R0b-1ns/kanjo/internal/config"
 	"github.com/R0b-1ns/kanjo/internal/core"
-	"github.com/R0b-1ns/kanjo/internal/gitworktree"
 	"github.com/R0b-1ns/kanjo/internal/pricesfile"
 	"github.com/R0b-1ns/kanjo/internal/sqlitestore"
 )
@@ -43,17 +42,8 @@ func finishCmd(args []string, stdout, stderr io.Writer, e env) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	repo := o.repo
-	if repo == "" {
-		repo = e.cwd
-	}
-	if !filepath.IsAbs(repo) {
-		repo = filepath.Join(e.cwd, repo)
-	}
-	var ws core.Workspace = gitworktree.New(repo, cfg.DataDir)
-	if e.ports != nil {
-		ws = e.ports.Workspace
-	}
+	repo := repoPath(o.repo, e.cwd)
+	ws := workspaceFor(e, repo, cfg.DataDir)
 	st, err := sqlitestore.Open(cfg.DataDir)
 	if err != nil {
 		return fail(stderr, err)

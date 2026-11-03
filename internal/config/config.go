@@ -283,33 +283,46 @@ func realPath(p string) (string, error) {
 
 // check validates values after each file, so errors can name the file.
 func (c Config) check() error {
+	for _, f := range []func() error{c.checkPaths, c.checkLimits, c.Delegate.check, c.checkTask, c.checkProjects} {
+		if err := f(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c Config) checkPaths() error {
 	switch {
 	case c.DataDir == "":
 		return errors.New("data_dir must not be empty")
-	case c.Claude.MaxLineBytes <= 0:
-		return errors.New("claude.max_line_bytes must be positive")
 	case len(c.Claude.ProjectPrefixes) == 0 || slices.Contains(c.Claude.ProjectPrefixes, ""):
 		return errors.New("claude.project_prefixes needs at least one non-empty prefix (an empty one would match every project)")
 	}
-	if c.Serve.Port < 1 || c.Serve.Port > 65535 {
+	return nil
+}
+
+func (c Config) checkLimits() error {
+	switch {
+	case c.Claude.MaxLineBytes <= 0:
+		return errors.New("claude.max_line_bytes must be positive")
+	case c.Serve.Port < 1 || c.Serve.Port > 65535:
 		return errors.New("serve.port must be between 1 and 65535")
-	}
-	if c.Prices.MaxAgeDays <= 0 {
+	case c.Prices.MaxAgeDays <= 0:
 		return errors.New("prices.max_age_days must be positive")
-	}
-	if c.Markers.MaxEvents <= 0 {
+	case c.Markers.MaxEvents <= 0:
 		return errors.New("markers.max_events must be positive")
 	}
-	if err := c.Delegate.check(); err != nil {
-		return err
-	}
+	return nil
+}
+
+func (c Config) checkTask() error {
 	if slices.Contains(c.Task.Ignore, "") {
 		return errors.New("task.ignore must not hold an empty entry")
 	}
 	if _, err := regexp.Compile(c.Task.Pattern); err != nil {
 		return fmt.Errorf("task.pattern: %w", err)
 	}
-	return c.checkProjects()
+	return nil
 }
 
 func (d DelegateConfig) check() error {

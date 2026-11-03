@@ -234,33 +234,39 @@ func (f *FakeWorkspace) Diff(_ context.Context, w core.Workdir, to core.State, d
 	if _, ok := f.trees[w.Session]; !ok {
 		return core.ErrNotOurs
 	}
-	base := map[string]core.Entry{}
-	for _, e := range stateOfRepo(f.repo).Entries {
-		base[e.Path] = e
-	}
 	out := &capWriter{w: dst, left: max}
-	seen := map[string]bool{}
-	for _, e := range to.Entries {
-		seen[e.Path] = true
-		kind := "index"
-		switch b, ok := base[e.Path]; {
-		case !ok:
-			kind = "new file mode"
-		case b == e:
-			continue
-		}
-		if _, err := fmt.Fprintf(out, "diff --git a/%s b/%s\n%s %s\n", e.Path, e.Path, kind, e.Mode); err != nil {
+	for _, h := range diffHeaders(stateOfRepo(f.repo).Entries, to.Entries) {
+		if _, err := io.WriteString(out, h); err != nil {
 			return err
 		}
 	}
-	for _, b := range stateOfRepo(f.repo).Entries {
-		if !seen[b.Path] {
-			if _, err := fmt.Fprintf(out, "diff --git a/%s b/%s\ndeleted file mode %s\n", b.Path, b.Path, b.Mode); err != nil {
-				return err
-			}
+	return nil
+}
+
+// diffHeaders describes how entries differ from base, added and changed files
+// in the order of entries, then deleted ones.
+func diffHeaders(base, entries []core.Entry) []string {
+	old := map[string]core.Entry{}
+	for _, b := range base {
+		old[b.Path] = b
+	}
+	var out []string
+	for _, e := range entries {
+		b, ok := old[e.Path]
+		delete(old, e.Path)
+		switch {
+		case !ok:
+			out = append(out, fmt.Sprintf("diff --git a/%s b/%s\nnew file mode %s\n", e.Path, e.Path, e.Mode))
+		case b != e:
+			out = append(out, fmt.Sprintf("diff --git a/%s b/%s\nindex %s\n", e.Path, e.Path, e.Mode))
 		}
 	}
-	return nil
+	for _, b := range base {
+		if _, gone := old[b.Path]; gone {
+			out = append(out, fmt.Sprintf("diff --git a/%s b/%s\ndeleted file mode %s\n", b.Path, b.Path, b.Mode))
+		}
+	}
+	return out
 }
 
 func stateOfRepo(repo map[string]string) core.State {

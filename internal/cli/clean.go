@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/R0b-1ns/kanjo/internal/core"
-	"github.com/R0b-1ns/kanjo/internal/gitworktree"
 	"github.com/R0b-1ns/kanjo/internal/sqlitestore"
 )
 
@@ -38,28 +37,8 @@ func cleanCmd(args []string, stdout, stderr io.Writer, e env) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	repo := o.repo
-	if repo == "" {
-		repo = e.cwd
-	}
-	if !filepath.IsAbs(repo) {
-		repo = filepath.Join(e.cwd, repo)
-	}
-	var ws core.Workspace = gitworktree.New(repo, cfg.DataDir)
-	if e.ports != nil {
-		ws = e.ports.Workspace
-	}
-	// Listing opens the database read-only; only --yes with something to remove writes.
-	ro, err := sqlitestore.OpenReadOnly(cfg.DataDir)
-	if errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprint(stdout, nothingToClean)
-		return 0
-	}
-	if err != nil {
-		return fail(stderr, err)
-	}
-	cs, err := core.Candidates(e.context(), core.FinishDeps{Journal: ro, Workspace: ws, Clock: e.clock})
-	ro.Close()
+	ws := workspaceFor(e, repoPath(o.repo, e.cwd), cfg.DataDir)
+	cs, err := listCleanable(e, cfg.DataDir, ws)
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -77,6 +56,21 @@ func cleanCmd(args []string, stdout, stderr io.Writer, e env) int {
 	}
 	defer st.Close()
 	return printCleaned(stdout, core.Clean(e.context(), core.FinishDeps{Journal: st, Workspace: ws, Clock: e.clock}, cs))
+}
+
+// listCleanable reads the runs without a verdict. The database is opened
+// read-only: only --yes with something to remove writes. A missing database
+// has none.
+func listCleanable(e env, dataDir string, ws core.Workspace) ([]core.Candidate, error) {
+	ro, err := sqlitestore.OpenReadOnly(dataDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer ro.Close()
+	return core.Candidates(e.context(), core.FinishDeps{Journal: ro, Workspace: ws, Clock: e.clock})
 }
 
 // listCandidates prints one line per run: session, task, state, folder, branch.

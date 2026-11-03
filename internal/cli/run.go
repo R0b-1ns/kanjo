@@ -75,26 +75,11 @@ func runCmd(args []string, stdout, stderr io.Writer, e env) int {
 		fmt.Fprintf(stderr, "kanjo run: %v\n", err)
 		return 2
 	}
-	cfg, _, err := setup(e, o.dataDir)
-	if err != nil {
-		return fail(stderr, err)
-	}
-	prompt, code := readPrompt(o.promptFile, e.cwd, cfg.Delegate.MaxPromptBytes, stderr)
+	cfg, req, code := o.prepare(e, stderr)
 	if code != proceed {
 		return code
 	}
-	req := o.request(cfg, prompt)
-	if err := req.Validate(); err != nil {
-		fmt.Fprintf(stderr, "kanjo run: %v\n", err)
-		return 2
-	}
-	repo := o.repo
-	if repo == "" {
-		repo = e.cwd
-	}
-	if !filepath.IsAbs(repo) {
-		repo = filepath.Join(e.cwd, repo)
-	}
+	repo := repoPath(o.repo, e.cwd)
 	deps, closeStore, err := o.dependencies(cfg, repo, e)
 	if err != nil {
 		return fail(stderr, err)
@@ -111,6 +96,44 @@ func runCmd(args []string, stdout, stderr io.Writer, e env) int {
 	return out.Result.Verdict.ExitCode()
 }
 
+// repoPath is the repository folder: --repo, else the current folder, absolute.
+func repoPath(repo, cwd string) string {
+	if repo == "" {
+		return cwd
+	}
+	if !filepath.IsAbs(repo) {
+		return filepath.Join(cwd, repo)
+	}
+	return repo
+}
+
+// workspaceFor is the git workspace of a repository, or the one tests inject.
+func workspaceFor(e env, repo, dataDir string) core.Workspace {
+	if e.ports != nil {
+		return e.ports.Workspace
+	}
+	return gitworktree.New(repo, dataDir)
+}
+
+// prepare loads the configuration, reads the prompt and builds the request,
+// checking all of it before anything is created.
+func (o *runOpts) prepare(e env, stderr io.Writer) (config.Config, core.DelegateRequest, int) {
+	cfg, _, err := setup(e, o.dataDir)
+	if err != nil {
+		return cfg, core.DelegateRequest{}, fail(stderr, err)
+	}
+	prompt, code := readPrompt(o.promptFile, e.cwd, cfg.Delegate.MaxPromptBytes, stderr)
+	if code != proceed {
+		return cfg, core.DelegateRequest{}, code
+	}
+	req := o.request(cfg, prompt)
+	if err := req.Validate(); err != nil {
+		fmt.Fprintf(stderr, "kanjo run: %v\n", err)
+		return cfg, req, 2
+	}
+	return cfg, req, proceed
+}
+
 // validate checks the options before any file is read or created.
 func (o *runOpts) validate(injected bool) error {
 	switch {
@@ -120,10 +143,17 @@ func (o *runOpts) validate(injected bool) error {
 		return errors.New("--model is required and must be a valid model id")
 	case o.promptFile == "":
 		return errors.New("--prompt-file is required")
-	case o.task != "" && (o.task == core.NoTask || !core.ValidTask(o.task)):
-		return errors.New("--task must be a valid task label (letters, digits, . _ - /, at most 64)")
 	case o.script == "" && !injected:
 		return errors.New("--script is required with --agent script")
+	}
+	return o.validateOptional()
+}
+
+// validateOptional checks the options that may be left out.
+func (o *runOpts) validateOptional() error {
+	switch {
+	case o.task != "" && (o.task == core.NoTask || !core.ValidTask(o.task)):
+		return errors.New("--task must be a valid task label (letters, digits, . _ - /, at most 64)")
 	case o.given["timeout"] && o.timeout <= 0:
 		return errors.New("--timeout must be positive")
 	case o.given["setup"] && o.setup == "", o.given["test"] && o.test == "":
@@ -201,7 +231,7 @@ func (o *runOpts) dependencies(cfg config.Config, repo string, e env) (core.Dele
 		if err != nil {
 			return core.DelegateDeps{}, nil, err
 		}
-		p = &delegatePorts{Workspace: gitworktree.New(repo, cfg.DataDir), Sandbox: nosandbox.Sandbox{}, Agent: agent}
+		p = &delegatePorts{Workspace: workspaceFor(e, repo, cfg.DataDir), Sandbox: nosandbox.Sandbox{}, Agent: agent}
 	}
 	st, err := sqlitestore.Open(cfg.DataDir)
 	if err != nil {

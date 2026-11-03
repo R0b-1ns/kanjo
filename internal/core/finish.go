@@ -78,11 +78,8 @@ type FinishOutcome struct {
 // between the two is repaired by running Finish again. It only touches what
 // the journal recorded.
 func Finish(ctx context.Context, d FinishDeps, session string, v LeadVerdict) (FinishOutcome, error) {
-	if !ValidSession(session) {
-		return FinishOutcome{}, errors.New("invalid session id")
-	}
-	if v != Accepted && v != Modified && v != Rejected {
-		return FinishOutcome{}, errors.New("the verdict must be accepted, modified or rejected")
+	if err := checkFinishArgs(session, v); err != nil {
+		return FinishOutcome{}, err
 	}
 	rec, err := reload(ctx, d, session)
 	if err != nil {
@@ -98,16 +95,34 @@ func Finish(ctx context.Context, d FinishDeps, session string, v LeadVerdict) (F
 	if err != nil {
 		return FinishOutcome{}, err
 	}
-	lead := Lead{At: d.Clock.Now(), Session: session, Verdict: v}
+	out, err := recordVerdict(ctx, d, rec, v)
+	out.WorkspaceGone = gone && !out.AlreadyRecorded
+	return out, err
+}
+
+func checkFinishArgs(session string, v LeadVerdict) error {
+	switch {
+	case !ValidSession(session):
+		return errors.New("invalid session id")
+	case v != Accepted && v != Modified && v != Rejected:
+		return errors.New("the verdict must be accepted, modified or rejected")
+	}
+	return nil
+}
+
+// recordVerdict writes the lead verdict. A verdict another process wrote in
+// the meantime is judged like one found at the start.
+func recordVerdict(ctx context.Context, d FinishDeps, rec RunRecord, v LeadVerdict) (FinishOutcome, error) {
+	lead := Lead{At: d.Clock.Now(), Session: rec.Session, Verdict: v}
 	switch existing, err := d.Journal.Judge(ctx, lead); {
 	case errors.Is(err, ErrJudged):
-		rec.Lead = &Lead{Session: session, Verdict: existing}
+		rec.Lead = &Lead{Session: rec.Session, Verdict: existing}
 		return alreadyJudged(rec, v)
 	case err != nil:
 		return FinishOutcome{}, fmt.Errorf("record the verdict: %w", err)
 	}
 	rec.Lead = &lead
-	return FinishOutcome{Run: rec, WorkspaceGone: gone}, nil
+	return FinishOutcome{Run: rec}, nil
 }
 
 func alreadyJudged(rec RunRecord, v LeadVerdict) (FinishOutcome, error) {

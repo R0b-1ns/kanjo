@@ -328,26 +328,35 @@ func (w *Workspace) listedOnBranch(ctx context.Context, dir, branch string) erro
 	if err != nil {
 		return core.ErrNotOurs
 	}
-	want := filepath.Join(real, filepath.Base(dir))
 	out, err := w.git(ctx, w.repo, nil, "worktree", "list", "--porcelain")
 	if err != nil {
 		return err
 	}
-	for _, block := range strings.Split(out, "\n\n") {
-		var path, br string
+	if worktreeBranches(out)[filepath.Join(real, filepath.Base(dir))] != "refs/heads/"+branch {
+		return core.ErrNotOurs
+	}
+	return nil
+}
+
+// worktreeBranches reads "git worktree list --porcelain": the checked out
+// branch of each worktree, by resolved path.
+func worktreeBranches(porcelain string) map[string]string {
+	out := map[string]string{}
+	for _, block := range strings.Split(porcelain, "\n\n") {
+		var path, branch string
 		for _, line := range strings.Split(block, "\n") {
 			if v, ok := strings.CutPrefix(line, "worktree "); ok {
 				path = v
 			}
 			if v, ok := strings.CutPrefix(line, "branch "); ok {
-				br = v
+				branch = v
 			}
 		}
-		if p, err := filepath.EvalSymlinks(path); err == nil && p == want && br == "refs/heads/"+branch {
-			return nil
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			out[resolved] = branch
 		}
 	}
-	return core.ErrNotOurs
+	return out
 }
 
 // busy tries the run lock without waiting; it creates nothing.
@@ -388,6 +397,16 @@ func (w *Workspace) Remove(ctx context.Context, o core.Owned) error {
 	case p.BranchExists && !p.TipMatches:
 		return core.ErrMoved
 	}
+	if err := w.deleteBranchAndFolder(ctx, o, p); err != nil {
+		return err
+	}
+	if err := os.Remove(w.lockOf(o.Session)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (w *Workspace) deleteBranchAndFolder(ctx context.Context, o core.Owned, p core.Presence) error {
 	if p.DirExists {
 		if _, err := w.git(ctx, w.repo, nil, "worktree", "remove", "--force", "--", w.dirOf(o.Session)); err != nil {
 			return err
@@ -397,9 +416,6 @@ func (w *Workspace) Remove(ctx context.Context, o core.Owned) error {
 		if _, err := w.git(ctx, w.repo, nil, "update-ref", "-d", "refs/heads/"+o.Branch, o.Tip); err != nil {
 			return err
 		}
-	}
-	if err := os.Remove(w.lockOf(o.Session)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
 	}
 	return nil
 }
