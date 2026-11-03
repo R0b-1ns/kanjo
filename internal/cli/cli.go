@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/R0b-1ns/kanjo/internal/core"
+	"github.com/R0b-1ns/kanjo/internal/selfupdate"
 	"github.com/R0b-1ns/kanjo/internal/sysclock"
 )
 
@@ -21,13 +22,15 @@ var Version = "dev"
 type env struct {
 	home, cwd, xdg string
 	clock          core.Clock
+	update         selfupdate.Updater
 }
 
 type command func(args []string, stdout, stderr io.Writer, e env) int
 
 var commands = map[string]command{
-	"snapshot": snapshotCmd,
-	"usage":    usageCmd,
+	"self-update": selfUpdateCmd,
+	"snapshot":    snapshotCmd,
+	"usage":       usageCmd,
 	"version": func(_ []string, stdout, _ io.Writer, _ env) int {
 		fmt.Fprintf(stdout, "kanjo %s\n", Version)
 		return 0
@@ -49,7 +52,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, fmt.Errorf("cannot find the working folder: %w", err))
 	}
-	return run(args, stdout, stderr, env{home: home, cwd: cwd, xdg: os.Getenv("XDG_CONFIG_HOME"), clock: sysclock.Clock{}})
+	return run(args, stdout, stderr, env{
+		home: home, cwd: cwd, xdg: os.Getenv("XDG_CONFIG_HOME"), clock: sysclock.Clock{},
+		update: productionUpdater(runningBinary()),
+	})
 }
 
 func run(args []string, stdout, stderr io.Writer, e env) int {

@@ -255,7 +255,7 @@ func TestHelpFlagExits0(t *testing.T) {
 
 func TestNoArgumentsExits2(t *testing.T) {
 	w := newWorld(t)
-	if code, out, errb := w.run(); code != 2 || out != "" || !strings.Contains(errb, "commands: snapshot, usage, version") {
+	if code, out, errb := w.run(); code != 2 || out != "" || !strings.Contains(errb, "commands: self-update, snapshot, usage, version") {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errb)
 	}
 }
