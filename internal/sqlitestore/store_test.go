@@ -62,11 +62,11 @@ func TestOpenCreatesPrivateDirAndGitignore(t *testing.T) {
 func TestOpenKeepsExistingGitignore(t *testing.T) {
 	dir := t.TempDir()
 	custom := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(custom, []byte("mine\n"), 0o644); err != nil {
+	if err := os.WriteFile(custom, []byte("*\n# mine\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	open(t, dir)
-	if got, _ := os.ReadFile(custom); string(got) != "mine\n" {
+	if got, _ := os.ReadFile(custom); string(got) != "*\n# mine\n" {
 		t.Fatalf(".gitignore overwritten: %q", got)
 	}
 }
@@ -220,5 +220,49 @@ func TestOpenReadOnlyRejectsNewerSchema(t *testing.T) {
 	db.Close()
 	if _, err := sqlitestore.OpenReadOnly(dir); err == nil || !strings.Contains(err.Error(), "newer") {
 		t.Fatalf("err = %v, want a newer-schema error", err)
+	}
+}
+
+func TestOpenRefusesAGitignoreThatDoesNotIgnoreEverything(t *testing.T) {
+	// A committed .gitignore in the data folder could make the database trackable.
+	for name, content := range map[string]string{"other rules": "mine\n", "negation": "*\n!kanjo.db\n", "empty": ""} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".gitignore")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sqlitestore.Open(dir); err == nil || !strings.Contains(err.Error(), path) {
+			t.Errorf("%s: err = %v, want a refusal naming %s", name, err, path)
+		}
+	}
+}
+
+func TestOpenRefusesSymlinkedFiles(t *testing.T) {
+	outside := t.TempDir()
+	for name, link := range map[string]string{"database": "kanjo.db", "gitignore": ".gitignore"} {
+		dir := t.TempDir()
+		target := filepath.Join(outside, name+".target")
+		if err := os.Symlink(target, filepath.Join(dir, link)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sqlitestore.Open(dir); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+			t.Errorf("%s: err = %v, want a symbolic link refusal", name, err)
+		}
+		if _, err := os.Stat(target); err == nil {
+			t.Errorf("%s: the link target was created or written", name)
+		}
+	}
+	dir := t.TempDir()
+	real := filepath.Join(outside, "real.db")
+	s := open(t, outside)
+	s.Close()
+	if err := os.Rename(filepath.Join(outside, "kanjo.db"), real); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(dir, "kanjo.db")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlitestore.OpenReadOnly(dir); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("read-only: err = %v, want a symbolic link refusal", err)
 	}
 }

@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, registers "sqlite"
@@ -53,9 +55,12 @@ func Open(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create data dir %s: %w", dir, err)
 	}
 	if err := writeGitignore(dir); err != nil {
-		return nil, fmt.Errorf("write %s: %w", filepath.Join(dir, ".gitignore"), err)
+		return nil, err
 	}
 	path := Path(dir)
+	if err := refuseLink(path); err != nil {
+		return nil, err
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // private from the first byte
 	if err != nil {
 		return nil, fmt.Errorf("create database %s: %w", path, err)
@@ -75,7 +80,7 @@ func Open(dir string) (*Store, error) {
 // openDB opens the SQLite file at path; extra is URI query text put before the
 // common options.
 func openDB(path, extra string) (*sql.DB, error) {
-	u := url.URL{Scheme: "file", Path: path, RawQuery: extra + "_pragma=busy_timeout(5000)"}
+	u := url.URL{Scheme: "file", Path: path, RawQuery: extra + "_pragma=trusted_schema(0)&_pragma=busy_timeout(5000)"}
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return nil, fmt.Errorf("open database %s: %w", path, err)
@@ -91,6 +96,9 @@ func OpenReadOnly(dir string) (*Store, error) {
 	path := Path(dir)
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("database %s: %w", path, err)
+	}
+	if err := refuseLink(path); err != nil {
+		return nil, err
 	}
 	db, err := openDB(path, "mode=ro&")
 	if err != nil {
@@ -108,13 +116,49 @@ func OpenReadOnly(dir string) (*Store, error) {
 }
 
 // writeGitignore keeps usage data out of git even when the folder is inside a
-// repository. An existing file is left alone.
+// repository. A missing file is created with "*"; an existing one is kept only
+// if it still ignores everything, because a committed .gitignore could
+// otherwise make the database trackable.
 func writeGitignore(dir string) error {
 	p := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(p); err == nil {
+	if err := refuseLink(p); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err := os.WriteFile(p, []byte("*\n"), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", p, err)
+		}
 		return nil
 	}
-	return os.WriteFile(p, []byte("*\n"), 0o644)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", p, err)
+	}
+	if !ignoresEverything(string(data)) {
+		return fmt.Errorf("%s does not ignore everything, so usage data could be committed: remove it or make it a line \"*\" with no \"!\" rules", p)
+	}
+	return nil
+}
+
+func ignoresEverything(gitignore string) bool {
+	star := false
+	for _, line := range strings.Split(gitignore, "\n") {
+		line = strings.TrimSpace(line)
+		star = star || line == "*"
+		if strings.HasPrefix(line, "!") {
+			return false
+		}
+	}
+	return star
+}
+
+// refuseLink fails when path is a symbolic link: a link committed inside a
+// data folder could redirect writes anywhere.
+func refuseLink(path string) error {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symbolic link; refusing to follow it", path)
+	}
+	return nil
 }
 
 // version reads the schema version and refuses one from a newer kanjo.
