@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-11-02T09:00:00.000Z","isSidechain":false,"message":{"role":"user","content":"other project OTH-1"}}
+{"type":"assistant","timestamp":"2026-11-02T09:00:05.000Z","isSidechain":false,"message":{"id":"m8","model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":0}}}

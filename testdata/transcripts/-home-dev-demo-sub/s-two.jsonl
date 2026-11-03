@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-11-02T12:00:00.000Z","isSidechain":false,"message":{"role":"user","content":"ticket XYZ-3 only"}}
+{"type":"assistant","timestamp":"2026-11-02T12:00:05.000Z","isSidechain":false,"message":{"id":"m4","model":"claude-unknown-9","role":"assistant","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":100,"output_tokens":200,"cache_read_input_tokens":300,"cache_creation_input_tokens":400}}}
+{"type":"assistant","timestamp":"2026-11-03T09:00:00.000Z","isSidechain":false,"message":{"id":"m5","model":"claude-haiku-5-5","role":"assistant","content":[{"type":"text","text":"answer"}],"usage":{"input_tokens":90000,"output_tokens":50,"cache_read_input_tokens":20000}}}
+{"type":"assistant","timestamp":"2026-11-03T09:05:00.000Z","message":{"id":"m7"

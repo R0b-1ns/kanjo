@@ -17,7 +17,9 @@ func collect(t *testing.T, input string, max int) ([]string, int) {
 	return got, over
 }
 
-func eq(a, b []string) bool { return strings.Join(a, "\x00") == strings.Join(b, "\x00") && len(a) == len(b) }
+func eq(a, b []string) bool {
+	return strings.Join(a, "\x00") == strings.Join(b, "\x00") && len(a) == len(b)
+}
 
 func TestForEachLineDeliversLines(t *testing.T) {
 	got, over := collect(t, "one\ntwo\n\nthree", 100)
