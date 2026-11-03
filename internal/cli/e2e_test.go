@@ -372,3 +372,24 @@ func TestUsageWorksOnAReadOnlyDataFolder(t *testing.T) {
 		t.Fatalf("usage left %d entries in the data folder, want only kanjo.db and .gitignore", len(entries))
 	}
 }
+
+// Paths come from config and may hold terminal control sequences (for example
+// an OSC 52 clipboard write): none may reach the terminal raw.
+func TestPrintedPathsCannotCarryTerminalEscapes(t *testing.T) {
+	w := newWorld(t)
+	evil := filepath.Join(filepath.Dir(w.data), "x\x1b[31m\x07")
+	cfg := "data_dir = \"" + strings.NewReplacer("\x1b", `\u001b`, "\x07", `\u0007`).Replace(evil) + "\"\n[claude]\nproject_prefixes = [\"-home-dev-demo\"]\n"
+	write(t, filepath.Join(w.home, ".config", "kanjo", "config.toml"), cfg)
+	_, out, errb := w.run("snapshot")
+	if strings.ContainsAny(out+errb, "\x1b\x07") || !strings.Contains(out, "x?[31m?") {
+		t.Fatalf("stdout %q stderr %q", out, errb)
+	}
+	// An error message that names the path is cleaned too.
+	if err := os.WriteFile(filepath.Join(evil, ".gitignore"), []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errb := w.run("snapshot")
+	if code != 1 || strings.ContainsAny(out+errb, "\x1b\x07") || !strings.Contains(errb, "x?[31m?") {
+		t.Fatalf("code %d stdout %q stderr %q", code, out, errb)
+	}
+}

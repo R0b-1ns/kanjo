@@ -48,7 +48,7 @@ func snapshotCmd(args []string, stdout, stderr io.Writer, e env) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "snapshot: %d sessions, %d rows, %d lines skipped -> %s\n", log.Sessions, log.Rows, log.Skipped, sqlitestore.Path(cfg.DataDir))
+	fmt.Fprintf(stdout, "snapshot: %d sessions, %d rows, %d lines skipped -> %s\n", log.Sessions, log.Rows, log.Skipped, printable(sqlitestore.Path(cfg.DataDir)))
 	if log.Skipped > 0 {
 		fmt.Fprintf(stderr, "warning: %d transcript lines skipped (unreadable or invalid)\n", log.Skipped)
 	}

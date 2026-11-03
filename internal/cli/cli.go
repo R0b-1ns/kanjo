@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/R0b-1ns/kanjo/internal/config"
 	"github.com/R0b-1ns/kanjo/internal/core"
@@ -84,8 +85,20 @@ func setup(e env, dataDir string) (config.Config, *pricesfile.Book, error) {
 }
 
 func fail(stderr io.Writer, err error) int {
-	fmt.Fprintf(stderr, "kanjo: %v\n", err)
+	fmt.Fprintf(stderr, "kanjo: %s\n", printable(err.Error()))
 	return 1
+}
+
+// printable replaces every character a terminal could act on (escape
+// sequences, bell, newlines) with "?". Paths come from config files and may
+// carry them.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return '?'
+	}, s)
 }
 
 // proceed is what parseFlags returns when the command should go on.
