@@ -1,9 +1,11 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -23,6 +25,9 @@ const (
 	ReasonMissing         Reason = "missing-files"
 	ReasonForbidden       Reason = "forbidden-path"
 	ReasonUnsafeLink      Reason = "unsafe-symlink"
+	ReasonTestFailed      Reason = "test-failed"
+	ReasonCheckFailed     Reason = "check-failed"
+	ReasonPatchTooLarge   Reason = "patch-too-large"
 )
 
 // reasonVerdict says which verdict a reason leads to.
@@ -38,6 +43,9 @@ var reasonVerdict = map[Reason]RunVerdict{
 	ReasonMissing:         RunFailed,
 	ReasonForbidden:       RunFailed,
 	ReasonUnsafeLink:      RunFailed,
+	ReasonTestFailed:      RunFailed,
+	ReasonCheckFailed:     RunFailed,
+	ReasonPatchTooLarge:   RunFailed,
 }
 
 // errAgentTimeout is the cause of the agent phase's deadline.
@@ -188,6 +196,9 @@ type delegation struct {
 	retries       int
 	before, after State
 	agentOK       bool // the last launch ended normally
+	log           io.Writer
+	agentStep     StepResult
+	steps         []StepResult
 }
 
 func (g *delegation) fail(r Reason) { g.reasons = append(g.reasons, r) }
@@ -217,12 +228,21 @@ func (g *delegation) cleanup() {
 }
 
 func (g *delegation) phases() {
-	if !g.createWorkspace() || !g.openBox() {
+	if !g.createWorkspace() || !g.openBox() || !g.setup() || !g.agentPhase() {
 		return
 	}
-	if g.setup() {
-		g.agentPhase()
+	g.writePatch()
+	if g.agentOK {
+		g.verify()
 	}
+}
+
+// StepResult is how one command of the run ended.
+type StepResult struct {
+	Name     string
+	Exit     int
+	Duration time.Duration
+	TimedOut bool
 }
 
 // setup runs --setup and reports whether the agent may start.
@@ -230,7 +250,7 @@ func (g *delegation) setup() bool {
 	if g.req.Setup == "" {
 		return true
 	}
-	switch ok := g.exec(g.req.Setup); {
+	switch ok := g.command("setup", ArtSetupLog, g.req.Setup); {
 	case g.ctx.Err() != nil:
 		g.fail(ReasonInterrupted)
 	case !ok:
@@ -239,13 +259,75 @@ func (g *delegation) setup() bool {
 	return len(g.reasons) == 0
 }
 
-// exec runs one command of the run under the command timeout and reports
-// whether it succeeded: exit 0 and not stopped.
-func (g *delegation) exec(shell string) bool {
+// verify runs --test then each --check, in this order and in the same box.
+// A failure does not stop the next command; an interruption does.
+func (g *delegation) verify() {
+	type step struct {
+		name, shell string
+		log         ArtifactName
+		reason      Reason
+	}
+	var steps []step
+	if g.req.Test != "" {
+		steps = append(steps, step{"test", g.req.Test, ArtTestLog, ReasonTestFailed})
+	}
+	for i, c := range g.req.Checks {
+		steps = append(steps, step{fmt.Sprintf("check-%d", i+1), c, ArtCheckLog(i + 1), ReasonCheckFailed})
+	}
+	for _, s := range steps {
+		ok := g.command(s.name, s.log, s.shell)
+		if g.ctx.Err() != nil {
+			g.fail(ReasonInterrupted)
+			return
+		}
+		if !ok {
+			g.fail(s.reason)
+		}
+	}
+}
+
+// command runs one shell command of the run under the command timeout, with
+// its output in its own log, and reports whether it succeeded: exit 0 and not
+// stopped.
+func (g *delegation) command(name string, log ArtifactName, shell string) bool {
+	out, closeLog := g.openLog(log)
+	defer closeLog()
 	ctx, cancel := context.WithTimeout(g.ctx, g.req.CommandTimeout)
 	defer cancel()
-	res, err := g.box.Exec(ctx, Cmd{Shell: shell, Grace: g.req.Grace})
+	res, err := g.box.Exec(ctx, Cmd{Shell: shell, Out: out, Grace: g.req.Grace})
+	g.steps = append(g.steps, StepResult{Name: name, Exit: res.Exit, Duration: res.Duration, TimedOut: res.Killed && g.ctx.Err() == nil})
 	return err == nil && res.Exit == 0 && !res.Killed
+}
+
+// openLog creates a log file of the run; when that fails the output is
+// dropped and a warning is kept.
+func (g *delegation) openLog(name ArtifactName) (io.Writer, func()) {
+	bk, cancel := g.bookkeeping()
+	defer cancel()
+	w, err := g.d.Artifacts.Create(bk, g.run.Session, name)
+	if err != nil {
+		g.warn("could not create " + string(name))
+		return io.Discard, func() {}
+	}
+	return w, func() { w.Close() }
+}
+
+// writePatch saves the changes of the run, base to final state. A patch over
+// the cap is not kept.
+func (g *delegation) writePatch() {
+	bk, cancel := g.bookkeeping()
+	defer cancel()
+	var buf bytes.Buffer
+	switch err := g.d.Workspace.Diff(bk, g.w, g.after, &buf, g.req.MaxPatchBytes); {
+	case errors.Is(err, ErrDiffTooLarge):
+		g.fail(ReasonPatchTooLarge)
+	case err != nil:
+		g.fail(ReasonWorkspaceFailed)
+	default:
+		if err := g.d.Artifacts.Write(bk, g.run.Session, ArtPatch, buf.Bytes()); err != nil {
+			g.warn("could not write " + string(ArtPatch))
+		}
+	}
 }
 
 func (g *delegation) createWorkspace() bool {
@@ -277,17 +359,21 @@ func (g *delegation) openBox() bool {
 // agentPhase runs the agent, and once more in the same session when expected
 // files are missing after a normal first launch. One deadline covers both. The
 // worktree is then read once more and judged, whatever happened to the agent.
-func (g *delegation) agentPhase() {
+func (g *delegation) agentPhase() bool {
 	var ok bool
 	if g.before, ok = g.read(); !ok {
-		return
+		return false
 	}
+	log, closeLog := g.openLog(ArtAgentLog)
+	defer closeLog()
+	g.log = log
+	defer func() { g.steps = append(g.steps, g.agentStep) }()
 	ctx, cancel := context.WithTimeoutCause(g.ctx, g.req.Timeout, errAgentTimeout)
 	defer cancel()
 	fresh := false // after reflects the end of the last launch
 	if g.runAgent(ctx, g.req.Prompt, false) {
 		if g.after, ok = g.read(); !ok {
-			return
+			return false
 		}
 		fresh = true
 		if missing := missingExpected(ChangedPaths(g.before, g.after), g.req.Expect); len(missing) > 0 {
@@ -298,10 +384,11 @@ func (g *delegation) agentPhase() {
 	}
 	if !fresh {
 		if g.after, ok = g.read(); !ok {
-			return
+			return false
 		}
 	}
 	g.judge()
+	return true
 }
 
 // judge compares the final state with the limits of the task.
@@ -339,7 +426,10 @@ func (g *delegation) read() (State, bool) {
 func (g *delegation) runAgent(ctx context.Context, prompt string, resume bool) bool {
 	g.launches++
 	g.agentOK = false
-	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume})
+	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume, Log: g.log})
+	g.agentStep.Name, g.agentStep.Exit = "agent", res.Exit
+	g.agentStep.Duration += res.Duration
+	g.agentStep.TimedOut = res.Killed && errors.Is(context.Cause(ctx), errAgentTimeout)
 	switch {
 	case err != nil:
 		g.fail(ReasonAgentFailed)
