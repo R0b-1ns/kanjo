@@ -149,7 +149,7 @@ func (ss *session) user(raw []byte) {
 	}
 	for _, text := range userTexts(u.Message.Content) {
 		for _, label := range ss.src.TaskPattern.FindAllString(text, -1) {
-			if core.ValidTask(label) {
+			if core.ValidTask(label) && !slices.Contains(ss.src.TaskIgnore, label) {
 				ss.labels[label]++
 			}
 		}

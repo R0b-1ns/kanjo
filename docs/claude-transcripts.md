@@ -53,7 +53,7 @@ cannot overwrite what was saved earlier.
 Every row of a session gets one task, chosen in this order:
 
 1. **Manual map** (`task.map_file`, default `<data_dir>/claude-tasks.tsv`): the longest session-id prefix that matches. `task_source` is `map`.
-2. **Heuristic**: the most frequent label matching `task.pattern` in the session's own user messages (ties go to the alphabetically first label). `task_source` is `heuristic`.
+2. **Heuristic**: the most frequent label matching `task.pattern` and not listed in `task.ignore` in the session's own user messages (ties go to the alphabetically first label). `task_source` is `heuristic`.
 3. Otherwise `-`, `task_source` `none`.
 
 Only text typed by the user counts for the heuristic: messages of sidechains

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -45,7 +46,7 @@ func TestDefaults(t *testing.T) {
 			ProjectPrefixes: []string{ProjectFolderName(e.cwd)},
 			MaxLineBytes:    67108864,
 		},
-		Task:   TaskConfig{Pattern: DefaultTaskPattern, MapFile: filepath.Join(e.cwd, ".ai-usage", "claude-tasks.tsv")},
+		Task:   TaskConfig{Pattern: DefaultTaskPattern, Ignore: DefaultTaskIgnore, MapFile: filepath.Join(e.cwd, ".ai-usage", "claude-tasks.tsv")},
 		Serve:  ServeConfig{Port: 8787},
 		Prices: PricesConfig{MaxAgeDays: 30},
 	}
@@ -351,6 +352,38 @@ func TestRepoConfigMayNotSetUserOnlyKeys(t *testing.T) {
 	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[task]\npattern = \"TASK-[0-9]+\"\n[claude]\nmax_line_bytes = 5\n")
 	if c, err := e.load(t); err != nil || c.Task.Pattern != "TASK-[0-9]+" || c.Claude.MaxLineBytes != 5 {
 		t.Fatalf("the user config may set them: %+v, %v", c, err)
+	}
+}
+
+func TestTaskIgnoreDefaultsUserOnlyAndNotEmptyEntries(t *testing.T) {
+	e := newEnv(t)
+	c, err := e.load(t)
+	if err != nil || !slices.Contains(c.Task.Ignore, "UTF-8") || !slices.Contains(c.Task.Ignore, "SHA-256") {
+		t.Fatalf("the default ignore list must hold the usual false positives: %v, %v", c.Task.Ignore, err)
+	}
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[task]\nignore = [\"CVE-2024\"]\n")
+	if c, err = e.load(t); err != nil || !slices.Equal(c.Task.Ignore, []string{"CVE-2024"}) {
+		t.Fatalf("the user list replaces the default: %v, %v", c.Task.Ignore, err)
+	}
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[task]\nignore = [\"\"]\n")
+	if _, err = e.load(t); err == nil || !strings.Contains(err.Error(), "task.ignore") {
+		t.Fatalf("an empty entry must be refused: %v", err)
+	}
+	// A cloned repository could hide the labels of real tasks.
+	e = newEnv(t)
+	put(t, filepath.Join(e.cwd, "kanjo.toml"), "[task]\nignore = []\n")
+	if _, err = e.load(t); err == nil || !strings.Contains(err.Error(), "user config") {
+		t.Fatalf("a repository may not set task.ignore: %v", err)
+	}
+}
+
+func TestMaxAgeDaysBoundary(t *testing.T) {
+	for days, ok := range map[string]bool{"0": false, "-1": false, "1": true} {
+		e := newEnv(t)
+		put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[prices]\nmax_age_days = "+days+"\n")
+		if _, err := e.load(t); (err == nil) != ok {
+			t.Errorf("max_age_days = %s: err = %v, want accepted = %v", days, err, ok)
+		}
 	}
 }
 

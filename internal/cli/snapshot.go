@@ -61,6 +61,7 @@ func claudeSource(cfg config.Config, book *pricesfile.Book) (claudecode.Source, 
 		ProjectsDir:  cfg.Claude.ProjectsDir,
 		Prefixes:     cfg.Claude.ProjectPrefixes,
 		MaxLineBytes: cfg.Claude.MaxLineBytes,
+		TaskIgnore:   cfg.Task.Ignore,
 		LongContext:  book.LongContext,
 	}
 	if cfg.Task.Pattern != "" {

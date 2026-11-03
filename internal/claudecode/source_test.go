@@ -257,6 +257,25 @@ func TestTieBetweenLabelsPicksSmallest(t *testing.T) {
 	}
 }
 
+func TestIgnoredLabelsAreNeverATask(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "-p/s-ign.jsonl",
+		`{"type":"user","timestamp":"2026-11-03T10:00:00Z","message":{"content":[{"type":"text","text":"UTF-8 UTF-8 UTF-8 then ABC-1"}]}}`,
+		asst("2026-11-03T10:00:01Z", "m1", "m", 1))
+	s := tempSource(root)
+	s.TaskPattern = defaultPattern
+	if got := readOK(t, s).Rows[0].Task; got != "UTF-8" {
+		t.Fatalf("without an ignore list the most frequent label wins: %s", got)
+	}
+	s.TaskIgnore = []string{"UTF-8"}
+	if got := readOK(t, s).Rows[0].Task; got != "ABC-1" {
+		t.Fatalf("task = %s, want ABC-1 (UTF-8 is ignored)", got)
+	}
+	if got := readOK(t, s).Sessions[0].LabelsSeen; got != 1 {
+		t.Fatalf("LabelsSeen = %d, want 1: an ignored label must not raise the multi-task warning", got)
+	}
+}
+
 func TestSessionWithoutUsableRowsIsNotListed(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "-p/s-empty.jsonl", `{"type":"summary"}`, "not json")

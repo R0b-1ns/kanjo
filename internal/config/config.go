@@ -18,6 +18,10 @@ import (
 	"github.com/R0b-1ns/kanjo/internal/core"
 )
 
+// DefaultTaskIgnore lists labels the default pattern matches but that are not
+// tasks (encodings, hashes, model names).
+var DefaultTaskIgnore = []string{"UTF-8", "UTF-16", "SHA-1", "SHA-256", "SHA-512", "ISO-8601", "GPT-4"}
+
 // DefaultTaskPattern matches issue-style ids such as ABC-12 or ABC-12.3.
 const DefaultTaskPattern = `\b[A-Z][A-Z0-9]+-[0-9]+(\.[0-9]+)?\b`
 
@@ -50,8 +54,9 @@ type ClaudeConfig struct {
 
 // TaskConfig configures task attribution.
 type TaskConfig struct {
-	Pattern string `toml:"pattern"`
-	MapFile string `toml:"map_file"`
+	Pattern string   `toml:"pattern"`
+	Ignore  []string `toml:"ignore"`
+	MapFile string   `toml:"map_file"`
 }
 
 // ServeConfig configures kanjo serve.
@@ -92,7 +97,7 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 			ProjectPrefixes: []string{ProjectFolderName(cwd)},
 			MaxLineBytes:    defaultMaxLineBytes,
 		},
-		Task:   TaskConfig{Pattern: DefaultTaskPattern},
+		Task:   TaskConfig{Pattern: DefaultTaskPattern, Ignore: slices.Clone(DefaultTaskIgnore)},
 		Serve:  ServeConfig{Port: 8787},
 		Prices: PricesConfig{MaxAgeDays: 30},
 	}
@@ -263,6 +268,9 @@ func (c Config) check() error {
 	}
 	if c.Prices.MaxAgeDays <= 0 {
 		return errors.New("prices.max_age_days must be positive")
+	}
+	if slices.Contains(c.Task.Ignore, "") {
+		return errors.New("task.ignore must not hold an empty entry")
 	}
 	if _, err := regexp.Compile(c.Task.Pattern); err != nil {
 		return fmt.Errorf("task.pattern: %w", err)
