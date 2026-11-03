@@ -2,9 +2,13 @@ package cli
 
 import (
 	"flag"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -82,4 +86,87 @@ func tomlKeys(t reflect.Type, prefix string) []string {
 		}
 	}
 	return keys
+}
+
+// portDocs names, for every interface of the core ports, the fake and the
+// contract suite that adding-an-adapter.md must mention.
+var portDocs = map[string][]string{
+	"UsageSource": {"StaticSource", "UsageSourceContract"},
+	"Store":       {"MemStore", "StoreContract"},
+	"PriceBook":   {"TablePrices", "PriceBookContract"},
+	"Clock":       {"FixedClock"},
+	"Journal":     {"MemJournal", "JournalContract"},
+	"RunJournal":  {"MemRunJournal", "RunJournalContract"},
+	"Sandbox":     {"FakeSandbox", "SandboxContract"},
+	"Box":         {"FakeSandbox"},
+	"Workspace":   {"FakeWorkspace", "WorkspaceContract"},
+	"Artifacts":   {"MemArtifacts", "ArtifactsContract"},
+	"AgentRunner": {"ScriptedAgent", "AgentRunnerContract"},
+}
+
+func TestEveryPortIsDocumented(t *testing.T) {
+	doc := readDoc(t, "adding-an-adapter.md")
+	fset := token.NewFileSet()
+	for _, file := range []string{"ports.go", "delegate_ports.go"} {
+		f, err := parser.ParseFile(fset, filepath.Join("..", "core", file), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				if _, isIface := ts.Type.(*ast.InterfaceType); !isIface {
+					continue
+				}
+				names, known := portDocs[ts.Name.Name]
+				if !known {
+					t.Errorf("port %s has no entry in portDocs: add its fake and contract", ts.Name.Name)
+					continue
+				}
+				for _, n := range append([]string{ts.Name.Name}, names...) {
+					if !strings.Contains(doc, "`"+n) {
+						t.Errorf("docs/adding-an-adapter.md does not mention `%s` (port %s)", n, ts.Name.Name)
+					}
+				}
+			}
+		}
+	}
+}
+
+var securityTestRe = regexp.MustCompile("`([a-z]+)\\.(Test[A-Za-z0-9_]+)`")
+
+// TestSecurityTestsExist: every test named in docs/security.md exists in the
+// package it is attributed to (integration-tagged tests included).
+func TestSecurityTestsExist(t *testing.T) {
+	doc := readDoc(t, "security.md")
+	cache := map[string]string{}
+	source := func(pkg string) string {
+		if s, ok := cache[pkg]; ok {
+			return s
+		}
+		var all strings.Builder
+		files, _ := filepath.Glob(filepath.Join("..", pkg, "*_test.go"))
+		for _, f := range files {
+			b, _ := os.ReadFile(f)
+			all.Write(b)
+		}
+		cache[pkg] = all.String()
+		return cache[pkg]
+	}
+	matches := securityTestRe.FindAllStringSubmatch(doc, -1)
+	if len(matches) < 50 {
+		t.Fatalf("found only %d test references in docs/security.md", len(matches))
+	}
+	for _, m := range matches {
+		if !strings.Contains(source(m[1]), "func "+m[2]+"(") {
+			t.Errorf("docs/security.md names %s.%s, which does not exist", m[1], m[2])
+		}
+	}
 }

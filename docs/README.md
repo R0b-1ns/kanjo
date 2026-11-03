@@ -18,6 +18,11 @@ pages below describe what exists now.
 | [commands/serve.md](commands/serve.md) | `kanjo serve`: read-only report page and `/api/data` on 127.0.0.1 |
 | [commands/mark.md](commands/mark.md) | `kanjo mark`: say which task you are on |
 | [markers.md](markers.md) | Task markers: scopes, which task a message gets, edge cases, recompute |
+| [commands/run.md](commands/run.md) | `kanjo run`: hand a task to an agent in a disposable worktree |
+| [commands/finish.md](commands/finish.md) | `kanjo finish`: record your verdict, remove the worktree, show the apply command |
+| [commands/summary.md](commands/summary.md) | `kanjo summary`: totals of the run journal |
+| [commands/clean.md](commands/clean.md) | `kanjo clean`: remove worktrees left by runs without a verdict |
+| [delegation.md](delegation.md) | Delegation: lifecycle, verdicts, retry, files of a run, `report.json`, watchdog, edge cases |
 | [commands/prices-check.md](commands/prices-check.md) | `kanjo prices check`: age and coverage of the price file |
 | [projects.md](projects.md) | Several projects: the `projects` key, `usage --all`, the page scope |
 | [commands/self-update.md](commands/self-update.md) | `kanjo self-update`: install the latest release |
@@ -41,6 +46,9 @@ kanjo usage --since 2026-11-01 --task ABC-12
 kanjo serve                          # read-only page on http://127.0.0.1:8787/
 kanjo mark start ABC-12              # from now on, usage goes to ABC-12
 kanjo mark end
+kanjo run --agent script --script ./agent.sh --model m --prompt-file p.txt --expect src/a.go --task ABC-12
+kanjo finish <session> --verdict accepted
+kanjo summary                        # totals of the run journal
 kanjo prices check                   # warns when prices are older than 30 days
 kanjo usage --all                    # every project listed in the user config
 ```
@@ -51,6 +59,7 @@ subscription bill.
 
 ## Not built yet
 
-Task delegation to other models, container sandbox, spending caps, routing,
-validated agent returns, the run and lead journals, cost per accepted task, and
-automatic price updates. See [spec.md](spec.md).
+Real model adapters (the only agent today is a test aid that runs a script you
+wrote), container sandbox, spending caps, routing, `batch`, validated agent
+returns, cost per accepted task, and automatic price updates. See
+[spec.md](spec.md) and [delegation.md](delegation.md).
