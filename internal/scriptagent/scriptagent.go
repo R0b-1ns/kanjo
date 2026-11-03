@@ -58,11 +58,16 @@ func New(script, forbidden string) (*Agent, error) {
 
 // inside reports whether path is in root, both with symbolic links resolved.
 func inside(path, root string) bool {
-	p, err1 := filepath.EvalSymlinks(filepath.Dir(path))
-	r, err2 := filepath.EvalSymlinks(root)
-	if err1 != nil || err2 != nil {
+	p, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
 		return true // cannot tell: refuse
 	}
+	// root may not exist yet: resolve its parent, which must exist for anything to be inside it
+	parent, err := filepath.EvalSymlinks(filepath.Dir(root))
+	if err != nil {
+		return false
+	}
+	r := filepath.Join(parent, filepath.Base(root))
 	rel, err := filepath.Rel(r, p)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

@@ -190,3 +190,10 @@ func TestRunRefusesAnInvalidSessionOrModel(t *testing.T) {
 		t.Fatal("a command ran")
 	}
 }
+
+func TestAScriptIsNotInsideAFolderThatDoesNotExistYet(t *testing.T) {
+	data := realTemp(t)
+	if _, err := scriptagent.New(script(t, realTemp(t), 0o700), filepath.Join(data, "worktrees")); err != nil {
+		t.Fatalf("worktrees folder not created yet: %v", err)
+	}
+}
