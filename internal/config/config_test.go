@@ -69,12 +69,13 @@ func TestRepoFileOverridesUserFile(t *testing.T) {
 	e := newEnv(t)
 	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"),
 		"data_dir = \"/user/data\"\n[claude]\nmax_line_bytes = 1000\nproject_prefixes = [\"-a\", \"-b\"]\n")
-	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \"/repo/data\"\n")
+	repoData := filepath.Join(e.cwd, "repo-data")
+	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \""+repoData+"\"\n")
 	c, err := e.load(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DataDir != "/repo/data" || c.Claude.MaxLineBytes != 1000 || !reflect.DeepEqual(c.Claude.ProjectPrefixes, []string{"-a", "-b"}) {
+	if c.DataDir != repoData || c.Claude.MaxLineBytes != 1000 || !reflect.DeepEqual(c.Claude.ProjectPrefixes, []string{"-a", "-b"}) {
 		t.Fatalf("config = %+v", c)
 	}
 }
@@ -104,7 +105,7 @@ func TestRelativePathsResolveAgainstCwd(t *testing.T) {
 
 func TestMapFileDefaultsUnderDataDir(t *testing.T) {
 	e := newEnv(t)
-	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \"/abs/usage\"\n")
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "data_dir = \"/abs/usage\"\n")
 	c, err := e.load(t)
 	if err != nil || c.Task.MapFile != "/abs/usage/claude-tasks.tsv" {
 		t.Fatalf("map file = %q, err %v", c.Task.MapFile, err)
@@ -203,12 +204,75 @@ func TestLimitsAreInclusive(t *testing.T) {
 
 func TestDataDirOverrideBeatsFilesAndMovesTaskMap(t *testing.T) {
 	e := newEnv(t)
-	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \"/from/file\"\n")
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "data_dir = \"/from/file\"\n")
 	c, err := Load(e.home, e.cwd, e.xdg, Overrides{DataDir: "flag-dir"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.DataDir != filepath.Join(e.cwd, "flag-dir") || c.Task.MapFile != filepath.Join(e.cwd, "flag-dir", "claude-tasks.tsv") {
 		t.Fatalf("config = %+v", c)
+	}
+}
+
+// A kanjo.toml in the current folder comes from whatever repository the user
+// is standing in: it must not redirect where data goes or what is read.
+func TestRepoConfigCannotReachOutsideItsFolder(t *testing.T) {
+	cases := map[string]string{
+		"absolute data dir":  "data_dir = \"/tmp/elsewhere\"\n",
+		"parent data dir":    "data_dir = \"../elsewhere\"\n",
+		"escaping data dir":  "data_dir = \"a/../../elsewhere\"\n",
+		"absolute prices":    "prices_file = \"/etc/passwd\"\n",
+		"absolute task map":  "[task]\nmap_file = \"/tmp/map.tsv\"\n",
+		"projects dir":       "[claude]\nprojects_dir = \"/somewhere\"\n",
+		"generic prefix":     "[claude]\nproject_prefixes = [\"-\"]\n",
+		"foreign prefix":     "[claude]\nproject_prefixes = [\"-other-project\"]\n",
+		"one foreign of two": "[claude]\nproject_prefixes = [\"-other\"]\n",
+	}
+	for name, content := range cases {
+		e := newEnv(t)
+		file := filepath.Join(e.cwd, "kanjo.toml")
+		put(t, file, content)
+		_, err := e.load(t)
+		if err == nil || !strings.Contains(err.Error(), file) {
+			t.Errorf("%s: err = %v, want a refusal naming %s", name, err, file)
+		}
+	}
+}
+
+func TestRepoConfigMayStayInsideItsFolder(t *testing.T) {
+	e := newEnv(t)
+	own := ProjectFolderName(e.cwd)
+	put(t, filepath.Join(e.cwd, "kanjo.toml"),
+		"data_dir = \"usage\"\nprices_file = \""+filepath.Join(e.cwd, "p.json")+"\"\n[task]\nmap_file = \"a/b.tsv\"\n[claude]\nproject_prefixes = [\""+own+"\", \""+own+"-sub\"]\n")
+	c, err := e.load(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(c.Claude.ProjectPrefixes, []string{own, own + "-sub"}) || c.DataDir != filepath.Join(e.cwd, "usage") {
+		t.Fatalf("config = %+v", c)
+	}
+}
+
+func TestUserConfigAndFlagsAreTrusted(t *testing.T) {
+	e := newEnv(t)
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"),
+		"data_dir = \"/srv/usage\"\nprices_file = \"/srv/p.json\"\n[task]\nmap_file = \"/srv/m.tsv\"\n[claude]\nprojects_dir = \"/srv/projects\"\nproject_prefixes = [\"-\"]\n")
+	c, err := e.load(t)
+	if err != nil {
+		t.Fatalf("the user's own config may point anywhere: %v", err)
+	}
+	if c.Claude.ProjectsDir != "/srv/projects" || c.DataDir != "/srv/usage" {
+		t.Fatalf("config = %+v", c)
+	}
+	if c, err = Load(e.home, e.cwd, e.xdg, Overrides{DataDir: "/tmp/flag"}); err != nil || c.DataDir != "/tmp/flag" {
+		t.Fatalf("a flag may point anywhere: %+v, %v", c, err)
+	}
+}
+
+func TestRepoPathMayNameItsOwnFolder(t *testing.T) {
+	e := newEnv(t)
+	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \".\"\n")
+	if c, err := e.load(t); err != nil || c.DataDir != e.cwd {
+		t.Fatalf("data_dir = . must be accepted: %+v, %v", c, err)
 	}
 }

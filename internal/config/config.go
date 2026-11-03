@@ -76,10 +76,11 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 	if userDir == "" {
 		userDir = filepath.Join(home, ".config")
 	}
-	for _, path := range []string{filepath.Join(userDir, "kanjo", "config.toml"), filepath.Join(cwd, "kanjo.toml")} {
-		if err := mergeFile(&c, path); err != nil {
-			return Config{}, err
-		}
+	if err := mergeFile(&c, filepath.Join(userDir, "kanjo", "config.toml"), ""); err != nil {
+		return Config{}, err
+	}
+	if err := mergeFile(&c, filepath.Join(cwd, "kanjo.toml"), cwd); err != nil {
+		return Config{}, err
 	}
 	if over.DataDir != "" {
 		c.DataDir = over.DataDir
@@ -88,23 +89,14 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 	return c, nil
 }
 
-// mergeFile applies one config file on top of c. A missing file is fine; an
-// unreadable, oversized, malformed or unknown-key file is an error.
-func mergeFile(c *Config, path string) error {
-	f, err := os.Open(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+// mergeFile applies one config file on top of c. A missing file changes nothing; an
+// unreadable, oversized, malformed or unknown-key file is an error. A non-empty
+// repoDir marks the file as untrusted (it comes from the repository the user
+// is standing in): see checkRepo.
+func mergeFile(c *Config, path, repoDir string) error {
+	data, err := readFile(path)
 	if err != nil {
 		return fmt.Errorf("config %s: %w", path, err)
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
-	if err != nil {
-		return fmt.Errorf("config %s: %w", path, err)
-	}
-	if len(data) > maxFileBytes {
-		return fmt.Errorf("config %s is larger than %d bytes", path, maxFileBytes)
 	}
 	md, err := toml.Decode(string(data), c)
 	if err != nil {
@@ -116,7 +108,62 @@ func mergeFile(c *Config, path string) error {
 	if err := c.check(); err != nil {
 		return fmt.Errorf("config %s: %w", path, err)
 	}
+	if repoDir != "" {
+		if err := c.checkRepo(md, repoDir); err != nil {
+			return fmt.Errorf("config %s: %w", path, err)
+		}
+	}
 	return nil
+}
+
+// readFile reads a config file of at most maxFileBytes. A missing file reads
+// as empty, which changes nothing.
+func readFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
+	if err == nil && len(data) > maxFileBytes {
+		err = fmt.Errorf("larger than %d bytes", maxFileBytes)
+	}
+	return data, err
+}
+
+// checkRepo limits what a repository's kanjo.toml may set: it must not send
+// data, prices or the task map outside its own folder, point at another
+// transcript folder, or widen the projects read beyond this folder's own name.
+// The user config and command-line flags are not restricted.
+func (c Config) checkRepo(md toml.MetaData, cwd string) error {
+	if md.IsDefined("claude", "projects_dir") {
+		return errors.New("claude.projects_dir may only be set in the user config or by flag")
+	}
+	if own := ProjectFolderName(cwd); md.IsDefined("claude", "project_prefixes") {
+		for _, p := range c.Claude.ProjectPrefixes {
+			if !strings.HasPrefix(p, own) {
+				return fmt.Errorf("claude.project_prefixes in a repository config must start with %q (this folder's name); widen it in the user config", own)
+			}
+		}
+	}
+	for _, f := range []struct {
+		key  []string
+		path string
+	}{{[]string{"data_dir"}, c.DataDir}, {[]string{"prices_file"}, c.PricesFile}, {[]string{"task", "map_file"}, c.Task.MapFile}} {
+		if md.IsDefined(f.key...) && !within(cwd, f.path) {
+			return fmt.Errorf("%s in a repository config must stay inside %s", strings.Join(f.key, "."), cwd)
+		}
+	}
+	return nil
+}
+
+// within reports whether p, resolved against cwd, is cwd or below it.
+func within(cwd, p string) bool {
+	rel, err := filepath.Rel(cwd, abs(cwd, p))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // check validates values after each file, so errors can name the file.
