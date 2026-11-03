@@ -38,7 +38,7 @@ func TestWriteCSVKeepsTotalsWarningsAndNoticeOffStdout(t *testing.T) {
 	if strings.Contains(out.String(), "total") || strings.Contains(out.String(), "warning") {
 		t.Fatalf("stdout must hold only CSV: %q", out.String())
 	}
-	for _, want := range []string{"total est_usd 1.5000 (3 messages unpriced)", "warning: session s-9 mentions several tasks", estimateNotice} {
+	for _, want := range []string{"total est_usd 1.5000 (3 messages unpriced)", "warning: session s-9 mentions several tasks", core.EstimateNotice} {
 		if !strings.Contains(errb.String(), want) {
 			t.Errorf("stderr lacks %q: %q", want, errb.String())
 		}

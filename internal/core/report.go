@@ -44,6 +44,7 @@ type Group struct {
 type Report struct {
 	Groups             []Group
 	TotalUSD           float64
+	USDBySource        map[string]float64 // priced cost per row source (claude, junior, ...)
 	UnpricedMessages   int64
 	MultiLabelSessions []string // sessions that mentioned several task labels
 }
@@ -117,6 +118,10 @@ func (g *Group) add(r UsageRow, pb PriceBook, rep *Report) {
 	g.USD += usd
 	g.Priced = true
 	rep.TotalUSD += usd
+	if rep.USDBySource == nil {
+		rep.USDBySource = map[string]float64{}
+	}
+	rep.USDBySource[r.Source] += usd
 }
 
 type sessionRef struct{ source, session string }
