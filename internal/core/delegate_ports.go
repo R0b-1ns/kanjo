@@ -195,3 +195,38 @@ type Artifacts interface {
 	// Write makes a new file with data, whole or not at all.
 	Write(ctx context.Context, session string, name ArtifactName, data []byte) error
 }
+
+// AgentRunner runs one launch of an agent inside a box.
+type AgentRunner interface {
+	// Run starts the agent once. A failing, timed-out or killed agent is a
+	// result; the error is for an agent that could not be started. The result
+	// carries no prompt or output text.
+	Run(ctx context.Context, box Box, req AgentRequest) (AgentResult, error)
+}
+
+// AgentRequest is one launch. Prompt is untrusted data of bounded size; it
+// reaches the agent in memory or on its standard input, never in an argument.
+// Resume asks the agent to continue the same session (the retry). Log, when
+// set, receives the agent's output.
+type AgentRequest struct {
+	Session, Model, Prompt string
+	Resume                 bool
+	Log                    io.Writer
+}
+
+// AgentResult is how a launch ended.
+type AgentResult struct {
+	Exit     int
+	Killed   bool         // ctx ended it
+	Quota    bool         // the provider's quota is exhausted
+	Usage    []ModelUsage // nil means unavailable, not zero
+	Duration time.Duration
+}
+
+// ModelUsage is what a launch consumed with one model. CostUSD is nil when the
+// cost is unknown and 0 for a free model.
+type ModelUsage struct {
+	Model   string
+	Tokens  Tokens
+	CostUSD *float64
+}
