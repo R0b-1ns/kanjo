@@ -43,3 +43,7 @@ func TestFixedClock(t *testing.T) {
 		t.Fatalf("Now = %v", got)
 	}
 }
+
+func TestMemJournalContract(t *testing.T) {
+	kanjotest.JournalContract(t, func(t *testing.T) core.Journal { return kanjotest.NewMemJournal() })
+}
