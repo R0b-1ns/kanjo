@@ -125,7 +125,8 @@ func validCommand(s string) bool {
 	return s != "" && len(s) <= maxCommandLen && !strings.ContainsRune(s, 0)
 }
 
-func (q DelegateRequest) validate() error {
+// Validate checks the request before anything is created.
+func (q DelegateRequest) Validate() error {
 	switch {
 	case q.Task != "" && !ValidTask(q.Task):
 		return errors.New("invalid task label")
@@ -159,7 +160,7 @@ func (q DelegateRequest) validate() error {
 // reference); everything after is a verdict. The run row is written before
 // anything is created and completed on every path out.
 func Delegate(ctx context.Context, d DelegateDeps, req DelegateRequest) (DelegateOutcome, error) {
-	if err := req.validate(); err != nil {
+	if err := req.Validate(); err != nil {
 		return DelegateOutcome{}, err
 	}
 	ref := req.Ref
