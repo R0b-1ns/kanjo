@@ -8,6 +8,7 @@ Founding document: `docs/spec.md`. Slice design and plan: `docs/superpowers/`.
 
 ```sh
 go test -race -count=1 ./...                       # tests (offline only)
+go test -race -count=1 -tags integration ./...     # real git, needs git and sh
 go vet ./... && gofmt -l .                         # types and format (gofmt prints nothing)
 go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...   # dependency vulnerabilities
 scripts/build.sh [version]                         # binaries + SHA256SUMS in dist/
