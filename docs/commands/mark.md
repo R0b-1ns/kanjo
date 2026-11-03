@@ -39,12 +39,12 @@ marker, else the global one.
 
 | Case | Line on stdout |
 |---|---|
-| `start` recorded | `started ABC-12 (global) at 2026-11-03T12:00:00.000Z` |
-| `start` of the active task | `ABC-12 is already the active task (global) since 2026-11-03T12:00:00.000Z` |
-| `end` recorded | `ended the active task (session 4153a2d6) at 2026-11-03T12:30:00.000Z` |
+| `start` recorded | `started ABC-12 (global) at 2026-11-03T12:00:00.000Z -> /work/app/.ai-usage/kanjo.db` |
+| `start` of the active task | `ABC-12 is already the active task (global) since 2026-11-03T12:00:00.000Z -> /work/app/.ai-usage/kanjo.db` |
+| `end` recorded | `ended the active task (session 4153a2d6) at 2026-11-03T12:30:00.000Z -> /work/app/.ai-usage/kanjo.db` |
 | `current` | `ABC-12 since 2026-11-03T12:00:00.000Z (global)` or `no active task` |
 
-Times are UTC, to the millisecond, from the system clock.
+Times are UTC, to the millisecond, from the system clock. The path after `->` is the journal file written. The default data folder is `.ai-usage` in the current folder, so a `mark` run from a sub-folder writes another journal than `snapshot` run at the root: check the path, or set `data_dir` in the user config ([../configuration.md](../configuration.md)).
 
 ## Exit codes
 

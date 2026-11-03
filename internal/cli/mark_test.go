@@ -21,7 +21,7 @@ func (w *world) runAt(now time.Time, args ...string) (code int, stdout, stderr s
 
 func TestMarkStartThenCurrent(t *testing.T) {
 	w := newWorld(t)
-	if out := w.must("mark", "start", "ABC-12"); out != "started ABC-12 (global) at 2026-11-03T12:00:00.000Z\n" {
+	if out := w.must("mark", "start", "ABC-12"); out != "started ABC-12 (global) at 2026-11-03T12:00:00.000Z -> "+filepath.Join(w.data, "kanjo.db")+"\n" {
 		t.Fatalf("start output = %q", out)
 	}
 	if out := w.must("mark", "current"); out != "ABC-12 since 2026-11-03T12:00:00.000Z (global)\n" {
@@ -45,7 +45,7 @@ func TestMarkEndThenCurrentSaysNoActiveTask(t *testing.T) {
 	w := newWorld(t)
 	w.must("mark", "start", "ABC-12")
 	later := fixedNow.Add(time.Minute)
-	if code, out, _ := w.runAt(later, "mark", "end"); code != 0 || out != "ended the active task (global) at 2026-11-03T12:01:00.000Z\n" {
+	if code, out, _ := w.runAt(later, "mark", "end"); code != 0 || out != "ended the active task (global) at 2026-11-03T12:01:00.000Z -> "+filepath.Join(w.data, "kanjo.db")+"\n" {
 		t.Fatalf("end: code %d out %q", code, out)
 	}
 	if code, out, _ := w.runAt(later, "mark", "current"); code != 0 || out != "no active task\n" {
@@ -191,7 +191,7 @@ func TestMarkStoresNoPathOrText(t *testing.T) {
 	}
 }
 
-func TestMarkedUsageEndToEnd(t *testing.T) {
+func TestMarkerStartedAfterTheMessagesDoesNotMarkThem(t *testing.T) {
 	w := newWorld(t)
 	w.must("mark", "start", "MARK-1")
 	w.must("snapshot")

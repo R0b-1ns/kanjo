@@ -98,6 +98,9 @@ func scopeName(session string) string {
 
 func stamp(m core.Marker) string { return m.At.UTC().Format(core.MarkerTimeLayout) }
 
+// into names the journal file, so a marker written from another folder is not lost silently.
+func into(dir string) string { return " -> " + printable(sqlitestore.Path(dir)) }
+
 func markStart(dir string, maxEvents int, task, session string, stdout, stderr io.Writer, e env) int {
 	st, err := sqlitestore.Open(dir)
 	if err != nil {
@@ -109,9 +112,9 @@ func markStart(dir string, maxEvents int, task, session string, stdout, stderr i
 	case err != nil:
 		return fail(stderr, err)
 	case started:
-		fmt.Fprintf(stdout, "started %s (%s) at %s\n", task, scopeName(session), stamp(m))
+		fmt.Fprintf(stdout, "started %s (%s) at %s%s\n", task, scopeName(session), stamp(m), into(dir))
 	default:
-		fmt.Fprintf(stdout, "%s is already the active task (%s) since %s\n", task, scopeName(session), stamp(m))
+		fmt.Fprintf(stdout, "%s is already the active task (%s) since %s%s\n", task, scopeName(session), stamp(m), into(dir))
 	}
 	return 0
 }
@@ -126,7 +129,7 @@ func markEnd(dir string, maxEvents int, session string, stdout, stderr io.Writer
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "ended the active task (%s) at %s\n", scopeName(session), stamp(m))
+	fmt.Fprintf(stdout, "ended the active task (%s) at %s%s\n", scopeName(session), stamp(m), into(dir))
 	return 0
 }
 
