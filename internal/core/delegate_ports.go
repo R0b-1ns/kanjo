@@ -16,6 +16,20 @@ var (
 	ErrNotRunning = errors.New("the run is not running")
 	// ErrJudged means the run already has a lead verdict.
 	ErrJudged = errors.New("the run already has a lead verdict")
+	// ErrNoCommit means the repository has no commit to start from.
+	ErrNoCommit = errors.New("the repository has no commit")
+	// ErrBadRef means the reference is not a commit of the repository.
+	ErrBadRef = errors.New("the reference is not a commit")
+	// ErrExists means a worktree or branch for that session already exists.
+	ErrExists = errors.New("a worktree or branch for that session already exists")
+	// ErrBusy means a run holds the lock of the worktree.
+	ErrBusy = errors.New("the run is still alive")
+	// ErrMoved means the branch tip is not the one the journal recorded.
+	ErrMoved = errors.New("the branch moved since the run ended")
+	// ErrNotOurs means the folder or branch is not one a run created.
+	ErrNotOurs = errors.New("not a worktree this tool created")
+	// ErrDiffTooLarge means the diff is over the byte cap.
+	ErrDiffTooLarge = errors.New("the diff is over the size cap")
 	// ErrBoxClosed means the box was closed and runs nothing any more.
 	ErrBoxClosed = errors.New("the box is closed")
 )
@@ -76,4 +90,63 @@ type ExecResult struct {
 	Exit     int
 	Killed   bool // ctx ended it
 	Duration time.Duration
+}
+
+// Workspace owns the disposable worktrees of runs.
+type Workspace interface {
+	// Resolve turns a reference into a commit id. ErrNoCommit when the
+	// repository has no commit, ErrBadRef when ref is not a commit.
+	Resolve(ctx context.Context, ref string) (commit string, err error)
+	// Create makes the worktree and branch of a session at commit and takes the
+	// run lock, held until Release. ErrExists when either already exists;
+	// nothing is then changed.
+	Create(ctx context.Context, session, commit string) (Workdir, error)
+	// State is the content of the worktree (files not ignored by git). It never
+	// follows a symbolic link and never changes the repository's own index.
+	State(ctx context.Context, w Workdir) (State, error)
+	// Diff writes the changes from the base commit to the state, new, changed,
+	// deleted and binary files included. ErrDiffTooLarge past max bytes.
+	Diff(ctx context.Context, w Workdir, to State, dst io.Writer, max int64) error
+	// Release drops the run lock. Safe to call twice.
+	Release(w Workdir) error
+	// Inspect says what exists of an owned workspace. ErrNotOurs when the
+	// folder is not a worktree this tool created.
+	Inspect(ctx context.Context, o Owned) (Presence, error)
+	// Remove deletes the worktree, its branch and its lock file, and nothing
+	// else. ErrNotOurs, ErrBusy (lock held), ErrMoved (branch tip is not
+	// o.Tip) delete nothing. Anything already absent is skipped: removing
+	// twice succeeds.
+	Remove(ctx context.Context, o Owned) error
+}
+
+// Workdir is a created worktree. Dir is opaque to the core.
+type Workdir struct {
+	Session, Dir, Branch, Base string
+}
+
+// Entry is one file of a State: Mode is the git mode ("100644", "100755",
+// "120000" for a link); Blob identifies the content; Link is the target of a
+// link and empty otherwise.
+type Entry struct {
+	Path, Mode, Blob, Link string
+}
+
+// State is the content of a worktree at an instant. Equal Trees mean equal
+// content. Head is the commit the branch points to.
+type State struct {
+	Tree    string
+	Head    string
+	Entries []Entry
+}
+
+// Owned names what the journal recorded about a run: nothing else may be
+// inspected or removed. Branch and Dir must equal BranchOf and DirOf of the
+// session; Tip is the branch tip recorded at the end of the run.
+type Owned struct {
+	Session, Branch, Dir, Tip string
+}
+
+// Presence says what exists of an Owned workspace.
+type Presence struct {
+	DirExists, BranchExists, Busy, TipMatches bool
 }
