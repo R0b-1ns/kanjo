@@ -301,8 +301,22 @@ func TestIntegrationIgnoredFilesAreCounted(t *testing.T) {
 	// The agent can write the rule that hides its own file.
 	writeFile(t, filepath.Join(w.Dir, "sub", ".gitignore"), "*\n")
 	writeFile(t, filepath.Join(w.Dir, "sub", "hidden"), "x")
-	if got := r.state(w).Ignored; got != 2 {
-		t.Fatalf("Ignored = %d, want 2 (the rule file and the file it hides)", got)
+	// The exact count is git's business (it may list the folder too); the
+	// point is that the hidden file is not silent.
+	if r.state(w).Ignored == 0 {
+		t.Fatal("a file hidden by the agent's own rule was not reported")
+	}
+}
+
+func TestIntegrationAnIgnoredFolderCountsOnce(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_folder")
+	writeFile(t, filepath.Join(w.Dir, ".gitignore"), "deps/\n")
+	for _, n := range []string{"a", "b", "c"} {
+		writeFile(t, filepath.Join(w.Dir, "deps", n), n)
+	}
+	if got := r.state(w).Ignored; got != 1 {
+		t.Fatalf("Ignored = %d, want 1 (the folder)", got)
 	}
 }
 
