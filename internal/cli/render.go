@@ -49,15 +49,21 @@ func warnings(rep core.Report) []string {
 // writeCSV prints the table on stdout; totals, warnings and the notice go to
 // stderr so the CSV stays machine-readable.
 func writeCSV(stdout, stderr io.Writer, by string, rep core.Report) int {
-	w := csv.NewWriter(stdout)
-	if err := w.WriteAll(table(by, rep)); err != nil {
-		return fail(stderr, err)
+	if code := writeRecords(stdout, stderr, table(by, rep)); code != 0 {
+		return code
 	}
 	fmt.Fprintln(stderr, total(rep))
 	for _, line := range warnings(rep) {
 		fmt.Fprintln(stderr, line)
 	}
 	fmt.Fprintln(stderr, estimateNotice)
+	return 0
+}
+
+func writeRecords(stdout, stderr io.Writer, records [][]string) int {
+	if err := csv.NewWriter(stdout).WriteAll(records); err != nil {
+		return fail(stderr, err)
+	}
 	return 0
 }
 

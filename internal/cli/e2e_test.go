@@ -339,3 +339,36 @@ func TestPartlyPurgedSessionNeverShrinksSavedUsage(t *testing.T) {
 		t.Fatalf("saved usage shrank:\n%s", out)
 	}
 }
+
+func TestUsageCSVWithNoDataKeepsStdoutMachineReadable(t *testing.T) {
+	w := newWorld(t)
+	code, out, errb := w.run("usage", "--by", "model", "--csv")
+	wantHeader := "model,messages,input,output,reasoning,cache_write_5m,cache_write_1h,cache_read,est_usd,unpriced_messages\n"
+	if code != 0 || out != wantHeader || !strings.Contains(errb, "no data; run kanjo snapshot") {
+		t.Fatalf("code %d stdout %q stderr %q", code, out, errb)
+	}
+}
+
+func TestUsageWorksOnAReadOnlyDataFolder(t *testing.T) {
+	w := newWorld(t)
+	w.must("snapshot")
+	before := w.must("usage", "--csv")
+	if err := os.Chmod(filepath.Join(w.data, "kanjo.db"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(w.data, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(w.data, 0o700) })
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	code, out, errb := w.run("usage", "--csv")
+	if code != 0 || out != before {
+		t.Fatalf("reading must not need write access: code %d stderr %q", code, errb)
+	}
+	entries, _ := os.ReadDir(w.data)
+	if len(entries) != 2 {
+		t.Fatalf("usage left %d entries in the data folder, want only kanjo.db and .gitignore", len(entries))
+	}
+}

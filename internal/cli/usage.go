@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 
 	"github.com/R0b-1ns/kanjo/internal/config"
 	"github.com/R0b-1ns/kanjo/internal/core"
@@ -56,6 +55,10 @@ func usageCmd(args []string, stdout, stderr io.Writer, e env) int {
 		return fail(stderr, err)
 	}
 	if len(rows) == 0 {
+		if o.csv { // keep stdout a valid CSV: the hint goes to stderr
+			fmt.Fprint(stderr, noData)
+			return writeRecords(stdout, stderr, table(q.By, core.Report{}))
+		}
 		fmt.Fprint(stdout, noData)
 		return 0
 	}
@@ -67,13 +70,13 @@ func usageCmd(args []string, stdout, stderr io.Writer, e env) int {
 	return 0
 }
 
-// readStore reads every saved row without creating anything: a data folder
+// readStore reads every saved row without writing anything: a data folder
 // that does not exist yet reads as empty.
 func readStore(dir string) ([]core.UsageRow, []core.SessionInfo, error) {
-	if _, err := os.Stat(sqlitestore.Path(dir)); errors.Is(err, fs.ErrNotExist) {
+	st, err := sqlitestore.OpenReadOnly(dir)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil
 	}
-	st, err := sqlitestore.Open(dir)
 	if err != nil {
 		return nil, nil, err
 	}

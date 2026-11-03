@@ -4,6 +4,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -72,6 +73,31 @@ func Open(dir string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+// OpenReadOnly opens an existing database for reading only. It creates no
+// folder or file, runs no DDL and writes nothing, so it works on a read-only
+// folder and never waits behind a writer for schema work. A missing database
+// is an error that wraps fs.ErrNotExist.
+func OpenReadOnly(dir string) (*Store, error) {
+	path := Path(dir)
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("database %s: %w", path, err)
+	}
+	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, fmt.Errorf("open database %s: %w", path, err)
+	}
+	v, err := version(db)
+	if err == nil && v == 0 {
+		err = errors.New("not a kanjo database: no schema")
+	}
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("database %s: %w", path, err)
+	}
+	return &Store{db: db}, nil
+}
+
 // writeGitignore keeps usage data out of git even when the folder is inside a
 // repository. An existing file is left alone.
 func writeGitignore(dir string) error {
@@ -82,13 +108,17 @@ func writeGitignore(dir string) error {
 	return os.WriteFile(p, []byte("*\n"), 0o644)
 }
 
-func migrate(db *sql.DB) error {
-	var v int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
-		return err
+// version reads the schema version and refuses one from a newer kanjo.
+func version(db *sql.DB) (v int, err error) {
+	if err = db.QueryRow("PRAGMA user_version").Scan(&v); err == nil && v > schemaVersion {
+		err = fmt.Errorf("schema version %d is newer than this kanjo supports (%d); update kanjo", v, schemaVersion)
 	}
-	if v > schemaVersion {
-		return fmt.Errorf("schema version %d is newer than this kanjo supports (%d); update kanjo", v, schemaVersion)
+	return v, err
+}
+
+func migrate(db *sql.DB) error {
+	if _, err := version(db); err != nil {
+		return err
 	}
 	if _, err := db.Exec(schema); err != nil {
 		return err

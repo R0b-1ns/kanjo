@@ -170,3 +170,55 @@ func TestOpenSetsSchemaVersion(t *testing.T) {
 		t.Fatalf("user_version = %d, err %v; want 1", v, err)
 	}
 }
+
+func TestOpenReadOnlyReadsButNeverWrites(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	if err := s.Merge(context.Background(), oneRow("ABC-1"), logAt); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	ro, err := sqlitestore.OpenReadOnly(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	if rows, err := ro.Rows(context.Background()); err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %v, err %v", rows, err)
+	}
+	if err := ro.Merge(context.Background(), oneRow("ABC-1"), logAt); err == nil {
+		t.Fatal("a read-only store must refuse to write")
+	}
+}
+
+func TestOpenReadOnlyNeverCreatesAnything(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "absent")
+	if _, err := sqlitestore.OpenReadOnly(dir); err == nil {
+		t.Fatal("expected an error for a missing database")
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Fatal("OpenReadOnly created the folder")
+	}
+	empty := t.TempDir()
+	if err := os.WriteFile(filepath.Join(empty, "kanjo.db"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlitestore.OpenReadOnly(empty); err == nil {
+		t.Fatal("an empty file is not a kanjo database")
+	}
+}
+
+func TestOpenReadOnlyRejectsNewerSchema(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "kanjo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("PRAGMA user_version = 99"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if _, err := sqlitestore.OpenReadOnly(dir); err == nil || !strings.Contains(err.Error(), "newer") {
+		t.Fatalf("err = %v, want a newer-schema error", err)
+	}
+}
