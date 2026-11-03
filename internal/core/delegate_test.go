@@ -217,3 +217,110 @@ func TestDelegateWarnsWhenTheRowCannotBeCompleted(t *testing.T) {
 		t.Error("the lock must still be released")
 	}
 }
+
+func TestAgentTimeoutIsVerdictTimeoutAndExit124(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("src/a.go", "x"), kanjotest.Loop()})
+	req := r.req()
+	req.Timeout = 50 * time.Millisecond
+	out := r.run(req)
+	rec := r.record()
+	if out.Result.Verdict != core.RunTimeout || rec.Verdict != core.RunTimeout || rec.Exit != 124 || out.Result.Exit != 124 {
+		t.Fatalf("outcome %+v record %+v", out.Result, rec)
+	}
+	if r.ws.Holding(testSession) {
+		t.Error("lock still held")
+	}
+}
+
+func TestInterruptCompletesTheRowAsInterrupted(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Loop()})
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	out, err := core.Delegate(ctx, r.deps(), r.req())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := r.record()
+	if out.Result.Verdict != core.RunInterrupted || rec.Verdict != core.RunInterrupted || rec.Exit != 1 || !rec.Created {
+		t.Fatalf("outcome %+v record %+v", out.Result, rec)
+	}
+	if r.ws.Removals() != 0 || len(r.ws.Branches()) != 1 {
+		t.Error("the worktree must stay for the lead")
+	}
+	if r.ws.Holding(testSession) {
+		t.Error("lock still held")
+	}
+}
+
+func TestQuotaIsVerdictQuotaExhaustedWithExit1(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.ExhaustQuota()})
+	out := r.run(r.req())
+	if out.Result.Verdict != core.RunQuota || out.Result.Exit != 1 || r.record().Verdict != core.RunQuota {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestAgentNonZeroExitFailsTheRun(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("src/a.go", "x"), kanjotest.Fail(3)})
+	out := r.run(r.req())
+	if out.Result.Verdict != core.RunFailed || out.Result.Exit != 1 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestFailingSetupSkipsTheAgent(t *testing.T) {
+	r := newRig(t, writeA)
+	r.sb.Handler = func(_ context.Context, _ core.BoxSpec, c core.Cmd) core.ExecResult { return core.ExecResult{Exit: 1} }
+	req := r.req()
+	req.Setup = "make deps"
+	out := r.run(req)
+	if out.Result.Verdict != core.RunFailed || r.agent.Launches() != 0 || out.Result.Launches != 0 {
+		t.Fatalf("outcome %+v, launches %d", out.Result, r.agent.Launches())
+	}
+	if cmds := r.sb.Cmds(); len(cmds) != 1 || cmds[0].Shell != "make deps" {
+		t.Fatalf("cmds = %+v", cmds)
+	}
+}
+
+func TestSuccessfulSetupRunsBeforeTheAgent(t *testing.T) {
+	r := newRig(t, writeA)
+	req := r.req()
+	req.Setup = "make deps"
+	out := r.run(req)
+	if out.Result.Verdict != core.RunOK || r.agent.Launches() != 1 || len(r.sb.Cmds()) != 1 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+	if got := r.sb.Specs()[0]; got.Dir != "/fake/worktrees/"+testSession {
+		t.Fatalf("box spec = %+v", got)
+	}
+}
+
+func TestCommandTimeoutIsAFailureNotExit124(t *testing.T) {
+	r := newRig(t, writeA)
+	r.sb.Handler = func(ctx context.Context, _ core.BoxSpec, c core.Cmd) core.ExecResult {
+		<-ctx.Done()
+		return core.ExecResult{Exit: -1, Killed: true}
+	}
+	req := r.req()
+	req.Setup, req.CommandTimeout = "sleep forever", 50*time.Millisecond
+	out := r.run(req)
+	if out.Result.Verdict != core.RunFailed || out.Result.Exit != 1 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestInterruptDuringSetupIsInterrupted(t *testing.T) {
+	r := newRig(t, writeA)
+	r.sb.Handler = func(ctx context.Context, _ core.BoxSpec, c core.Cmd) core.ExecResult {
+		<-ctx.Done()
+		return core.ExecResult{Exit: -1, Killed: true}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	req := r.req()
+	req.Setup = "sleep forever"
+	out, err := core.Delegate(ctx, r.deps(), req)
+	if err != nil || out.Result.Verdict != core.RunInterrupted || r.agent.Launches() != 0 {
+		t.Fatalf("outcome %+v err %v launches %d", out.Result, err, r.agent.Launches())
+	}
+}

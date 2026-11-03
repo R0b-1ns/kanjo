@@ -14,15 +14,28 @@ type Reason string
 const (
 	ReasonWorkspaceFailed Reason = "workspace-failed"
 	ReasonSandboxFailed   Reason = "sandbox-failed"
+	ReasonSetupFailed     Reason = "setup-failed"
 	ReasonAgentFailed     Reason = "agent-failed"
+	ReasonAgentTimeout    Reason = "agent-timeout"
+	ReasonQuota           Reason = "quota-exhausted"
+	ReasonInterrupted     Reason = "interrupted"
+	ReasonStray           Reason = "stray-files"
 )
 
 // reasonVerdict says which verdict a reason leads to.
 var reasonVerdict = map[Reason]RunVerdict{
 	ReasonWorkspaceFailed: RunFailed,
 	ReasonSandboxFailed:   RunFailed,
+	ReasonSetupFailed:     RunFailed,
 	ReasonAgentFailed:     RunFailed,
+	ReasonAgentTimeout:    RunTimeout,
+	ReasonQuota:           RunQuota,
+	ReasonInterrupted:     RunInterrupted,
+	ReasonStray:           RunStray,
 }
+
+// errAgentTimeout is the cause of the agent phase's deadline.
+var errAgentTimeout = errors.New("the agent ran out of time")
 
 // verdictOrder is the precedence when several reasons apply.
 var verdictOrder = []RunVerdict{RunInterrupted, RunTimeout, RunQuota, RunFailed, RunStray}
@@ -199,8 +212,33 @@ func (g *delegation) phases() {
 	if !g.createWorkspace() || !g.openBox() {
 		return
 	}
-	g.launch()
+	if g.setup() {
+		g.launch()
+	}
 	g.takeTip()
+}
+
+// setup runs --setup and reports whether the agent may start.
+func (g *delegation) setup() bool {
+	if g.req.Setup == "" {
+		return true
+	}
+	switch ok := g.exec(g.req.Setup); {
+	case g.ctx.Err() != nil:
+		g.fail(ReasonInterrupted)
+	case !ok:
+		g.fail(ReasonSetupFailed)
+	}
+	return len(g.reasons) == 0
+}
+
+// exec runs one command of the run under the command timeout and reports
+// whether it succeeded: exit 0 and not stopped.
+func (g *delegation) exec(shell string) bool {
+	ctx, cancel := context.WithTimeout(g.ctx, g.req.CommandTimeout)
+	defer cancel()
+	res, err := g.box.Exec(ctx, Cmd{Shell: shell, Grace: g.req.Grace})
+	return err == nil && res.Exit == 0 && !res.Killed
 }
 
 func (g *delegation) createWorkspace() bool {
@@ -231,10 +269,31 @@ func (g *delegation) openBox() bool {
 
 func (g *delegation) launch() {
 	g.launches++
-	res, err := g.d.Agent.Run(g.ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: g.req.Prompt})
-	if err != nil || res.Exit != 0 {
+	ctx, cancel := context.WithTimeoutCause(g.ctx, g.req.Timeout, errAgentTimeout)
+	defer cancel()
+	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: g.req.Prompt})
+	switch {
+	case err != nil:
+		g.fail(ReasonAgentFailed)
+	case res.Killed:
+		g.fail(killedReason(ctx))
+	case res.Quota:
+		g.fail(ReasonQuota)
+	case res.Exit != 0:
 		g.fail(ReasonAgentFailed)
 	}
+}
+
+// killedReason tells the watchdog (the phase's deadline) from an interruption
+// (the parent context ended) for an agent that was stopped.
+func killedReason(ctx context.Context) Reason {
+	switch {
+	case errors.Is(context.Cause(ctx), errAgentTimeout):
+		return ReasonAgentTimeout
+	case ctx.Err() != nil:
+		return ReasonInterrupted
+	}
+	return ReasonAgentFailed // it stopped without being asked to
 }
 
 // takeTip records where the branch points at the end of the run.
