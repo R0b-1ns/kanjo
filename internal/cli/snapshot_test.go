@@ -182,3 +182,42 @@ func (w *world) markers() []core.Marker {
 	}
 	return ms
 }
+
+func TestUsageTextShowsTheAttributionLine(t *testing.T) {
+	w := newWorld(t)
+	w.must("snapshot")
+	out := w.must("usage")
+	if !strings.Contains(out, "attribution: 0 by marker, 0 by map, 6 by heuristic, 0 unattributed\n") ||
+		!strings.Contains(out, "warning: 6 messages attributed by heuristic, not by marker\n") {
+		t.Fatalf("usage =\n%s", out)
+	}
+	w.addMarker("s-two", core.MarkStart, "2026-11-01T00:00:00Z", "MARK-1")
+	w.must("snapshot")
+	out = w.must("usage")
+	if !strings.Contains(out, "attribution: 2 by marker, 0 by map, 4 by heuristic, 0 unattributed\n") ||
+		!strings.Contains(out, "warning: 4 messages attributed by heuristic, not by marker\n") {
+		t.Fatalf("usage after a marker =\n%s", out)
+	}
+}
+
+func TestNoHeuristicWarningWhenEverythingIsMarked(t *testing.T) {
+	w := newWorld(t)
+	w.addMarker("", core.MarkStart, "2026-11-01T00:00:00Z", "MARK-1")
+	w.must("snapshot")
+	out := w.must("usage")
+	if !strings.Contains(out, "attribution: 6 by marker, 0 by map, 0 by heuristic, 0 unattributed\n") || strings.Contains(out, "by heuristic, not by marker") {
+		t.Fatalf("usage =\n%s", out)
+	}
+}
+
+func TestUsageCSVIsUnchangedAndCarriesTheAttributionOnStderr(t *testing.T) {
+	w := newWorld(t)
+	w.must("snapshot")
+	code, out, errb := w.run("usage", "--csv")
+	want := "task,messages,input,output,reasoning,cache_write_5m,cache_write_1h,cache_read,est_usd,unpriced_messages\n" +
+		"ABC-12,4,36,164,0,250,340,1003,0.0066,0\n" +
+		"XYZ-3,2,90100,250,0,400,0,20300,0.0461,1\n"
+	if code != 0 || out != want || !strings.Contains(errb, "attribution: 0 by marker, 0 by map, 6 by heuristic, 0 unattributed\n") {
+		t.Fatalf("code %d stdout %q stderr %q", code, out, errb)
+	}
+}

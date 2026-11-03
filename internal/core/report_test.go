@@ -117,3 +117,64 @@ func TestTaskFilterMatchesTheLabelAndItsSubTasks(t *testing.T) {
 		}
 	}
 }
+
+func marked(r core.UsageRow, n int64) core.UsageRow { r.Marked = n; return r }
+
+func sinfo(session, taskSource string, labels int) core.SessionInfo {
+	return core.SessionInfo{Source: "claude", Session: session, TaskSource: taskSource, LabelsSeen: labels}
+}
+
+func attributionFixture() ([]core.UsageRow, []core.SessionInfo) {
+	rows := []core.UsageRow{
+		marked(urow("s-mark", "2026-11-03", "A-1", "m", 10, 1), 6), // 6 marker, 4 heuristic
+		urow("s-map", "2026-11-03", "B-2", "m", 5, 1),              // 5 map
+		urow("s-none", "2026-11-02", "-", "m", 3, 1),               // 3 none
+		urow("s-heur", "2026-11-02", "C-3", "m", 2, 1),             // 2 heuristic
+		urow("s-orphan", "2026-11-02", "D-4", "m", 1, 1),           // no session record: none
+	}
+	sessions := []core.SessionInfo{sinfo("s-mark", "heuristic", 1), sinfo("s-map", "map", 0), sinfo("s-none", "none", 0), sinfo("s-heur", "heuristic", 1)}
+	return rows, sessions
+}
+
+func TestAttributionCountsMarkerMapHeuristicNone(t *testing.T) {
+	rows, sessions := attributionFixture()
+	rep := core.Aggregate(rows, sessions, prices(), core.Query{By: "task"})
+	want := core.Attribution{Marker: 6, Map: 5, Heuristic: 6, None: 4}
+	if rep.Attribution != want {
+		t.Fatalf("attribution = %+v, want %+v", rep.Attribution, want)
+	}
+}
+
+func TestAttributionRespectsTheQueryFilters(t *testing.T) {
+	rows, sessions := attributionFixture()
+	rep := core.Aggregate(rows, sessions, prices(), core.Query{By: "task", Since: "2026-11-03"})
+	want := core.Attribution{Marker: 6, Map: 5, Heuristic: 4}
+	if rep.Attribution != want {
+		t.Fatalf("attribution = %+v, want %+v", rep.Attribution, want)
+	}
+	rep = core.Aggregate(rows, sessions, prices(), core.Query{By: "task", Task: "A-1"})
+	if rep.Attribution != (core.Attribution{Marker: 6, Heuristic: 4}) {
+		t.Fatalf("attribution = %+v", rep.Attribution)
+	}
+}
+
+func TestMultiLabelWarningIgnoresFullyMarkedSessions(t *testing.T) {
+	rows := []core.UsageRow{marked(urow("s-full", "2026-11-03", "A-1", "m", 4, 1), 4), urow("s-part", "2026-11-03", "A-1", "m", 4, 1)}
+	rows[1].Marked = 1
+	sessions := []core.SessionInfo{sinfo("s-full", "heuristic", 3), sinfo("s-part", "heuristic", 3)}
+	rep := core.Aggregate(rows, sessions, prices(), core.Query{By: "task"})
+	if !reflect.DeepEqual(rep.MultiLabelSessions, []string{"s-part"}) {
+		t.Fatalf("flagged = %v, want only the session with unmarked messages", rep.MultiLabelSessions)
+	}
+}
+
+func TestAggregateProjectsSumsAttribution(t *testing.T) {
+	rows, sessions := attributionFixture()
+	ps := []core.ProjectUsage{{Name: "a", Rows: rows[:2], Sessions: sessions[:2]}, {Name: "b", Rows: rows[2:], Sessions: sessions[2:]}}
+	for _, by := range []string{"project", "task"} {
+		rep := core.AggregateProjects(ps, prices(), core.Query{By: by})
+		if want := (core.Attribution{Marker: 6, Map: 5, Heuristic: 6, None: 4}); rep.Attribution != want {
+			t.Errorf("by %s: attribution = %+v, want %+v", by, rep.Attribution, want)
+		}
+	}
+}

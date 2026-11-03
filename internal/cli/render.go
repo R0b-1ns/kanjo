@@ -36,8 +36,17 @@ func total(rep core.Report) string {
 	return fmt.Sprintf("total est_usd %s (%d messages unpriced)", usd(rep.TotalUSD), rep.UnpricedMessages)
 }
 
+// attribution says how the messages found their task.
+func attribution(rep core.Report) string {
+	a := rep.Attribution
+	return fmt.Sprintf("attribution: %d by marker, %d by map, %d by heuristic, %d unattributed", a.Marker, a.Map, a.Heuristic, a.None)
+}
+
 func warnings(rep core.Report) []string {
 	var out []string
+	if h := rep.Attribution.Heuristic; h > 0 {
+		out = append(out, fmt.Sprintf("warning: %d messages attributed by heuristic, not by marker", h))
+	}
 	for _, s := range rep.MultiLabelSessions {
 		out = append(out, fmt.Sprintf("warning: session %s mentions several tasks; counted on one task", s))
 	}
@@ -51,6 +60,7 @@ func writeCSV(stdout, stderr io.Writer, by string, rep core.Report) int {
 		return code
 	}
 	fmt.Fprintln(stderr, total(rep))
+	fmt.Fprintln(stderr, attribution(rep))
 	for _, line := range warnings(rep) {
 		fmt.Fprintln(stderr, line)
 	}
@@ -72,6 +82,7 @@ func writeText(w io.Writer, by string, rep core.Report, book *pricesfile.Book) {
 	}
 	tw.Flush()
 	fmt.Fprintln(w, total(rep))
+	fmt.Fprintln(w, attribution(rep))
 	for _, line := range warnings(rep) {
 		fmt.Fprintln(w, line)
 	}

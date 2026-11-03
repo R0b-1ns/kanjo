@@ -55,8 +55,32 @@ type Group struct {
 	UnpricedMessages int64
 }
 
+// Attribution counts messages by how their task was found (spec section 15).
+type Attribution struct{ Marker, Map, Heuristic, None int64 }
+
+// Add returns the field-wise sum.
+func (a Attribution) Add(o Attribution) Attribution {
+	return Attribution{a.Marker + o.Marker, a.Map + o.Map, a.Heuristic + o.Heuristic, a.None + o.None}
+}
+
+// add counts the messages of one row; the unmarked ones follow the task
+// source recorded for their session.
+func (a *Attribution) add(r UsageRow, taskSource string) {
+	a.Marker += r.Marked
+	rest := r.Messages - r.Marked
+	switch taskSource {
+	case "map":
+		a.Map += rest
+	case "heuristic":
+		a.Heuristic += rest
+	default:
+		a.None += rest
+	}
+}
+
 // Report is the result of Aggregate.
 type Report struct {
+	Attribution        Attribution
 	Groups             []Group
 	TotalUSD           float64
 	USDBySource        map[string]float64 // priced cost per row source (claude, junior, ...)
@@ -91,10 +115,11 @@ func (q Query) match(r UsageRow) bool {
 // model has no price are counted as unpriced and add nothing to the totals.
 func Aggregate(rows []UsageRow, sessions []SessionInfo, pb PriceBook, q Query) Report {
 	multi := map[sessionRef]bool{}
+	sources := map[sessionRef]string{}
 	for _, s := range sessions {
-		if s.LabelsSeen > 1 {
-			multi[sessionRef{s.Source, s.Session}] = true
-		}
+		ref := sessionRef{s.Source, s.Session}
+		sources[ref] = s.TaskSource
+		multi[ref] = s.LabelsSeen > 1
 	}
 	groups := map[string]*Group{}
 	flagged := map[string]struct{}{}
@@ -108,7 +133,9 @@ func Aggregate(rows []UsageRow, sessions []SessionInfo, pb PriceBook, q Query) R
 			groups[name] = &Group{Name: name}
 		}
 		groups[name].add(r, pb, &rep)
-		if multi[sessionRef{r.Source, r.Session}] {
+		ref := sessionRef{r.Source, r.Session}
+		rep.Attribution.add(r, sources[ref])
+		if multi[ref] && r.Messages > r.Marked {
 			flagged[r.Session] = struct{}{}
 		}
 	}
