@@ -93,13 +93,13 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	reply(w, r, f.contentType, body)
+	reply(w, r, http.StatusOK, f.contentType, body)
 }
 
 // reply writes body; a HEAD request gets the headers only.
-func reply(w http.ResponseWriter, r *http.Request, contentType string, body []byte) {
+func reply(w http.ResponseWriter, r *http.Request, status int, contentType string, body []byte) {
 	w.Header().Set("Content-Type", contentType)
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	if r.Method != http.MethodHead {
 		w.Write(body)
 	}

@@ -124,18 +124,14 @@ func (s *server) data(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, r, http.StatusInternalServerError, "cannot read data")
 		return
 	}
-	reply(w, r, jsonType, append(body, '\n'))
+	reply(w, r, http.StatusOK, jsonType, append(body, '\n'))
 }
 
 const jsonType = "application/json; charset=utf-8"
 
 func jsonError(w http.ResponseWriter, r *http.Request, code int, msg string) {
 	body, _ := json.Marshal(map[string]string{"error": msg})
-	w.Header().Set("Content-Type", jsonType)
-	w.WriteHeader(code)
-	if r.Method != http.MethodHead {
-		w.Write(append(body, '\n'))
-	}
+	reply(w, r, code, jsonType, append(body, '\n'))
 }
 
 // build reports on the loaded projects with the same aggregation as
