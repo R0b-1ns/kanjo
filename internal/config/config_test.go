@@ -318,3 +318,16 @@ func TestRepoConfigMayUseASymlinkThatStaysInside(t *testing.T) {
 		t.Fatalf("a link that stays inside the folder is fine: %v", err)
 	}
 }
+
+func TestRepoPrefixMustBeTheFolderNameOrASubName(t *testing.T) {
+	for prefix, ok := range map[string]bool{"": true, "-sub": true, "2": false, "x": false, "-": true} {
+		e := newEnv(t)
+		own := ProjectFolderName(e.cwd)
+		file := filepath.Join(e.cwd, "kanjo.toml")
+		put(t, file, "[claude]\nproject_prefixes = [\""+own+prefix+"\"]\n")
+		_, err := e.load(t)
+		if (err == nil) != ok {
+			t.Errorf("prefix %q+%q: err = %v, want accepted=%v", own, prefix, err, ok)
+		}
+	}
+}

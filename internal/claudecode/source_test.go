@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -367,5 +368,30 @@ func TestTaskMapEntriesMustBeUsable(t *testing.T) {
 		if _, err := s.Read(context.Background()); err == nil {
 			t.Errorf("%s: expected an error", name)
 		}
+	}
+}
+
+func TestPrefixMatchesWholeNameOrSubFolderNames(t *testing.T) {
+	root := t.TempDir()
+	for i, dir := range []string{"-p", "-p-sub", "-p2", "-pp-sub", "-q"} {
+		write(t, root, dir+"/s-"+strconv.Itoa(i)+".jsonl", asst("2026-11-03T10:00:00Z", "m"+strconv.Itoa(i), "m", 1))
+	}
+	read := func(prefix string) []string {
+		s := tempSource(root)
+		s.Prefixes = []string{prefix}
+		var sessions []string
+		for _, si := range readOK(t, s).Sessions {
+			sessions = append(sessions, si.Session)
+		}
+		return sessions
+	}
+	if got := read("-p"); !reflect.DeepEqual(got, []string{"s-0", "s-1"}) {
+		t.Errorf("prefix -p read %v, want the folder itself and -p-sub only (not -p2 or -pp-sub)", got)
+	}
+	if got := read("-p-"); !reflect.DeepEqual(got, []string{"s-1"}) {
+		t.Errorf("prefix -p- read %v, want only -p-sub", got)
+	}
+	if got := read("-"); len(got) != 5 {
+		t.Errorf("prefix - must read every folder, read %v", got)
 	}
 }

@@ -26,7 +26,7 @@ const SourceName = "claude"
 // Source reads Claude Code transcripts.
 type Source struct {
 	ProjectsDir  string            // usually ~/.claude/projects
-	Prefixes     []string          // project folder name prefixes to read
+	Prefixes     []string          // project folders to read: a name equal to one, or one plus "-" and more
 	TaskPattern  *regexp.Regexp    // nil disables the heuristic
 	TaskMap      map[string]string // session id prefix -> task; the longest prefix wins
 	MaxLineBytes int               // longer lines are skipped and counted
@@ -109,7 +109,15 @@ func (s Source) discover() (*discovery, error) {
 }
 
 func (s Source) matches(name string) bool {
-	return slices.ContainsFunc(s.Prefixes, func(p string) bool { return strings.HasPrefix(name, p) })
+	return slices.ContainsFunc(s.Prefixes, func(p string) bool { return projectMatches(name, p) })
+}
+
+// projectMatches reports whether a project folder name is the prefix itself or
+// a sub-name of it (prefix, a dash, more). "-app" reads "-app" and "-app-api"
+// but not "-app2". Claude Code writes both "/" and "-" as "-", so a sibling
+// folder "app-legacy" cannot be told apart from a sub-folder.
+func projectMatches(name, prefix string) bool {
+	return name == prefix || strings.HasPrefix(name, strings.TrimSuffix(prefix, "-")+"-")
 }
 
 func (d *discovery) addProject(dir string) {

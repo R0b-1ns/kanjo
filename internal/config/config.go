@@ -144,8 +144,8 @@ func (c Config) checkRepo(md toml.MetaData, cwd string) error {
 	}
 	if own := ProjectFolderName(cwd); md.IsDefined("claude", "project_prefixes") {
 		for _, p := range c.Claude.ProjectPrefixes {
-			if !strings.HasPrefix(p, own) {
-				return fmt.Errorf("claude.project_prefixes in a repository config must start with %q (this folder's name); widen it in the user config", own)
+			if p != own && !strings.HasPrefix(p, own+"-") {
+				return fmt.Errorf("claude.project_prefixes in a repository config must be %q (this folder's name) or start with %q; widen it in the user config", own, own+"-")
 			}
 		}
 	}
