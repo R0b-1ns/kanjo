@@ -12,6 +12,7 @@ import (
 
 	"github.com/R0b-1ns/kanjo/internal/core"
 	"github.com/R0b-1ns/kanjo/internal/kanjotest"
+	"github.com/R0b-1ns/kanjo/internal/sqlitestore"
 )
 
 // runRig is a world whose run command uses fake workspace, sandbox and agent.
@@ -42,6 +43,15 @@ func (r *runRig) exec(ctx context.Context, args ...string) (code int, stdout, st
 
 func (r *runRig) run(args ...string) (int, string, string) {
 	return r.exec(context.Background(), append([]string{"run", "--agent", "script", "--model", "test-model", "--prompt-file", "prompt.txt", "--expect", "src/a.go"}, args...)...)
+}
+
+func (r *runRig) openStore() *sqlitestore.Store {
+	r.t.Helper()
+	st, err := sqlitestore.Open(r.data)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return st
 }
 
 func (r *runRig) setConfig(extra string) {

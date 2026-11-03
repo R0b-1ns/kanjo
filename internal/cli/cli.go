@@ -41,6 +41,7 @@ func (e env) context() context.Context {
 type command func(args []string, stdout, stderr io.Writer, e env) int
 
 var commands = map[string]command{
+	"finish":      finishCmd,
 	"mark":        markCmd,
 	"prices":      pricesCmd,
 	"run":         runCmd,

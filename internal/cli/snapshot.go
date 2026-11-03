@@ -44,18 +44,28 @@ func snapshotCmd(args []string, stdout, stderr io.Writer, e env) int {
 		return fail(stderr, err)
 	}
 	defer st.Close()
-	if src.Markers, err = timeline(context.Background(), st); err != nil {
-		return fail(stderr, err)
-	}
-	log, err := core.Snapshot(context.Background(), src, st, e.clock)
+	log, err := snapshotInto(context.Background(), src, st, e.clock)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintf(stdout, "snapshot: %d sessions, %d rows, %d lines skipped -> %s\n", log.Sessions, log.Rows, log.Skipped, printable(sqlitestore.Path(cfg.DataDir)))
+	fmt.Fprintln(stdout, snapshotLine(log, cfg.DataDir))
 	if log.Skipped > 0 {
 		fmt.Fprintf(stderr, "warning: %d transcript lines skipped (unreadable or invalid)\n", log.Skipped)
 	}
 	return 0
+}
+
+// snapshotInto reads the markers, then the source, and saves the result.
+func snapshotInto(ctx context.Context, src claudecode.Source, st *sqlitestore.Store, clk core.Clock) (core.SnapshotLog, error) {
+	var err error
+	if src.Markers, err = timeline(ctx, st); err != nil {
+		return core.SnapshotLog{}, err
+	}
+	return core.Snapshot(ctx, src, st, clk)
+}
+
+func snapshotLine(log core.SnapshotLog, dataDir string) string {
+	return fmt.Sprintf("snapshot: %d sessions, %d rows, %d lines skipped -> %s", log.Sessions, log.Rows, log.Skipped, printable(sqlitestore.Path(dataDir)))
 }
 
 // timeline reads the marker journal. A stored marker that fails validation
