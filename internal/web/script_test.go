@@ -144,3 +144,10 @@ func TestScriptLegendListsEverySource(t *testing.T) {
 		t.Fatalf("legend = %q: the segments must add up to the total", r.Legend)
 	}
 }
+
+func TestScriptSaysOneMessageInTheSingular(t *testing.T) {
+	ps := []core.ProjectUsage{{Name: "p", Rows: []core.UsageRow{urow("s", "2026-11-03", "-", "unknown", 1, core.Tokens{Output: 1})}}}
+	if r := runScript(t, loaderOf(ps), "project"); r.Unpriced != "1 message has no price and is not in the total." {
+		t.Fatalf("unpriced = %q", r.Unpriced)
+	}
+}

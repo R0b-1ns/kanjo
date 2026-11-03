@@ -72,9 +72,10 @@ function renderTotal(data) {
     legend.appendChild(item);
   }
   split.appendChild(legend);
-  byId("unpriced").textContent = data.unpriced_messages > 0
-    ? num(data.unpriced_messages) + " messages have no price and are not in the total."
-    : "";
+  const n = data.unpriced_messages;
+  byId("unpriced").textContent = n === 0 ? ""
+    : n === 1 ? "1 message has no price and is not in the total."
+    : num(n) + " messages have no price and are not in the total.";
   byId("notice").textContent = data.notice;
 }
 
