@@ -27,7 +27,8 @@ type env struct {
 	home, cwd, xdg string
 	clock          core.Clock
 	update         selfupdate.Updater
-	ctx            context.Context // ends serve in tests; nil means only a signal ends it
+	ctx            context.Context // ends serve and run in tests; nil means only a signal ends them
+	ports          *delegatePorts  // replaces the workspace, sandbox and agent of run in tests
 }
 
 func (e env) context() context.Context {
@@ -40,11 +41,15 @@ func (e env) context() context.Context {
 type command func(args []string, stdout, stderr io.Writer, e env) int
 
 var commands = map[string]command{
+	"clean":       cleanCmd,
+	"finish":      finishCmd,
 	"mark":        markCmd,
 	"prices":      pricesCmd,
+	"run":         runCmd,
 	"self-update": selfUpdateCmd,
 	"serve":       serveCmd,
 	"snapshot":    snapshotCmd,
+	"summary":     summaryCmd,
 	"usage":       usageCmd,
 	"version": func(_ []string, stdout, _ io.Writer, _ env) int {
 		fmt.Fprintf(stdout, "kanjo %s\n", Version)

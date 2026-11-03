@@ -49,6 +49,7 @@ func TestDefaults(t *testing.T) {
 		Task:   TaskConfig{Pattern: DefaultTaskPattern, Ignore: DefaultTaskIgnore, MapFile: filepath.Join(e.cwd, ".ai-usage", "claude-tasks.tsv")},
 		Serve:  ServeConfig{Port: 8787},
 		Prices: PricesConfig{MaxAgeDays: 30}, Markers: MarkersConfig{MaxEvents: 100000},
+		Delegate: DelegateConfig{TimeoutS: 900, CommandTimeoutS: 600, KillGraceS: 5, MaxLogBytes: 1 << 20, MaxPatchBytes: 16 << 20, MaxPromptBytes: 1 << 20, EnvPass: []string{}},
 	}
 	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("got  %+v\nwant %+v", c, want)
@@ -506,5 +507,81 @@ func TestRepoConfigMayNotSetMarkers(t *testing.T) {
 	_, err := e.load(t)
 	if err == nil || !strings.Contains(err.Error(), "markers") || !strings.Contains(err.Error(), "user config") {
 		t.Fatalf("markers in a repository config: err = %v", err)
+	}
+}
+
+func TestDelegateDefaults(t *testing.T) {
+	c, err := newEnv(t).load(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := DelegateConfig{TimeoutS: 900, CommandTimeoutS: 600, KillGraceS: 5, MaxLogBytes: 1048576, MaxPatchBytes: 16777216, MaxPromptBytes: 1048576, EnvPass: []string{}}
+	if !reflect.DeepEqual(c.Delegate, want) {
+		t.Fatalf("got %+v, want %+v", c.Delegate, want)
+	}
+}
+
+func TestDelegateValuesMustBePositive(t *testing.T) {
+	for _, key := range []string{"timeout_s", "command_timeout_s", "kill_grace_s", "max_log_bytes", "max_patch_bytes", "max_prompt_bytes"} {
+		for _, v := range []string{"0", "-1"} {
+			e := newEnv(t)
+			put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[delegate]\n"+key+" = "+v+"\n")
+			if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), "delegate."+key) {
+				t.Errorf("%s = %s: err = %v", key, v, err)
+			}
+		}
+	}
+}
+
+func TestDelegateEnvPassRejectsBadNames(t *testing.T) {
+	long := strings.Repeat("A", 65)
+	many := `"` + strings.Join(slices.Repeat([]string{"AB"}, 33), `", "`) + `"`
+	for name, list := range map[string]string{
+		"digit first": `["1A"]`, "dash": `["A-B"]`, "equals": `["A=B"]`, "empty": `[""]`, "space": `["A B"]`,
+		"too long": `["` + long + `"]`, "too many": "[" + many + "]",
+	} {
+		e := newEnv(t)
+		put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[delegate]\nenv_pass = "+list+"\n")
+		if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), "delegate.env_pass") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	e := newEnv(t)
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[delegate]\nenv_pass = [\"_A1\", \"HTTPS_PROXY\"]\n")
+	if c, err := e.load(t); err != nil || !slices.Equal(c.Delegate.EnvPass, []string{"_A1", "HTTPS_PROXY"}) {
+		t.Fatalf("good names: %+v, %v", c.Delegate, err)
+	}
+}
+
+func TestRepoConfigMayNotSetDelegate(t *testing.T) {
+	for _, content := range []string{"[delegate]\ntimeout_s = 5\n", "[delegate]\nenv_pass = [\"HOME\"]\n", "[delegate]\nmax_patch_bytes = 9\n"} {
+		e := newEnv(t)
+		put(t, filepath.Join(e.cwd, "kanjo.toml"), content)
+		if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), "user config") {
+			t.Errorf("%q: err = %v, want it to say the key is for the user config", content, err)
+		}
+	}
+}
+
+func TestUserConfigMaySetDelegate(t *testing.T) {
+	e := newEnv(t)
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[delegate]\ntimeout_s = 5\nkill_grace_s = 1\nenv_pass = [\"LANG\"]\n")
+	c, err := e.load(t)
+	if err != nil || c.Delegate.TimeoutS != 5 || c.Delegate.KillGraceS != 1 || c.Delegate.CommandTimeoutS != 600 || !slices.Equal(c.Delegate.EnvPass, []string{"LANG"}) {
+		t.Fatalf("%+v, %v", c.Delegate, err)
+	}
+}
+
+func TestDelegateEnvPassAcceptsExactlyThirtyTwoNames(t *testing.T) {
+	names := make([]string, 33)
+	for i := range names {
+		names[i] = "V" + strings.Repeat("A", i)
+	}
+	for n, wantOK := range map[int]bool{32: true, 33: false} {
+		e := newEnv(t)
+		put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[delegate]\nenv_pass = [\""+strings.Join(names[:n], "\", \"")+"\"]\n")
+		if _, err := e.load(t); (err == nil) != wantOK {
+			t.Errorf("%d names: err = %v", n, err)
+		}
 	}
 }

@@ -211,10 +211,17 @@ journal, deletes the worktree and its branch (only a `delegate/*` branch
 created by the tool), and prints the command to apply the patch. At each
 finish, also runs a Claude snapshot (section 7) and displays the task totals.
 
+Built in slice 4: the report is not rewritten (it is written once by `run`);
+the verdict lives in the `leads` table. The branch is deleted only if its tip is
+the one recorded at the end of the run. `kanjo clean` lists and, with `--yes`,
+removes what the journal recorded and that has no verdict, as `abandoned`. See
+`docs/delegation.md`.
+
 ### 5.4 summary
 
 Totals of a journal: tasks, launches, retries, duration, distribution of
-script verdicts and lead verdicts.
+script verdicts and lead verdicts. Built in slice 4 as text; tasks are the
+distinct labels other than `-`, and runs without a label are counted apart.
 
 ## 6. Task label
 
@@ -285,8 +292,12 @@ time).
 Decided in slice 3: the journal is SQLite tables in the data folder's
 `kanjo.db`, not a tab-separated file, so the folder protections and the
 transaction guarantees apply to it. Each kind of event has its own table. The
-first one built is `markers` (section 15); the run and lead tables come with
-the delegation engine.
+first one built is `markers` (section 15).
+
+Decided in slice 4: the run and lead tables are `runs` and `leads` (schema
+version 3, `docs/data-model.md`). A run row is written before anything is
+created and completed once; a lead row is the only thing that closes a run for
+`clean`. Times come from the same `Clock` as the markers. No path is stored.
 
 ## 9. Web page (serve)
 

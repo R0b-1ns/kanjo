@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	schemaVersion = 2
+	schemaVersion = 3
 	dbFile        = "kanjo.db"
 )
 
@@ -45,6 +45,32 @@ CREATE TABLE IF NOT EXISTS markers(
   task TEXT,
   CHECK((kind = 'start') = (task IS NOT NULL)));
 CREATE INDEX IF NOT EXISTS markers_scope ON markers(session, at, id);
+CREATE TABLE IF NOT EXISTS runs(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session     TEXT NOT NULL UNIQUE,
+  task        TEXT NOT NULL,
+  adapter     TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  started_at  TEXT NOT NULL,
+  finished_at TEXT,
+  verdict     TEXT NOT NULL CHECK(verdict IN ('running','ok-to-review','check-stray-files',
+              'failed','timeout','quota-exhausted','interrupted')),
+  exit_code   INTEGER,
+  launches    INTEGER NOT NULL DEFAULT 0 CHECK(launches BETWEEN 0 AND 2),
+  retries     INTEGER NOT NULL DEFAULT 0 CHECK(retries BETWEEN 0 AND 1),
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK(duration_ms >= 0),
+  base        TEXT NOT NULL,
+  tip         TEXT,
+  branch      TEXT NOT NULL,
+  dir         TEXT NOT NULL,
+  created     INTEGER NOT NULL DEFAULT 0 CHECK(created IN (0,1)),
+  CHECK((verdict = 'running') = (finished_at IS NULL)));
+CREATE INDEX IF NOT EXISTS runs_task ON runs(task, started_at);
+CREATE TABLE IF NOT EXISTS leads(
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  at      TEXT NOT NULL,
+  session TEXT NOT NULL UNIQUE REFERENCES runs(session),
+  verdict TEXT NOT NULL CHECK(verdict IN ('accepted','modified','rejected','abandoned')));
 `
 
 // addMarked upgrades a version 1 usage table.
