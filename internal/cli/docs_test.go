@@ -24,6 +24,7 @@ func readDoc(t *testing.T, rel string) string {
 
 func TestEveryCommandHasAPageDocumentingItsFlags(t *testing.T) {
 	registers := map[string]func(*flag.FlagSet){
+		"clean":       func(fs *flag.FlagSet) { cleanFlags(fs) },
 		"finish":      func(fs *flag.FlagSet) { finishFlags(fs) },
 		"mark":        func(fs *flag.FlagSet) { markFlags(fs) },
 		"prices":      func(fs *flag.FlagSet) { pricesCheckFlags(fs) },
