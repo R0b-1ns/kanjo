@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -255,5 +256,28 @@ func TestServeAcceptsTheHighestPort(t *testing.T) {
 	code := run([]string{"serve", "--port", "65535"}, &out, &errb, env{home: w.home, cwd: w.cwd, clock: kanjotest.FixedClock{T: fixedNow}, ctx: ctx})
 	if code == 2 {
 		t.Fatalf("65535 is a valid port: %s", errb.String())
+	}
+}
+
+func TestServeStopsOnSIGTERMWithoutAnInjectedContext(t *testing.T) {
+	w := newWorld(t)
+	out, errb := &syncBuffer{}, &syncBuffer{}
+	done := make(chan int, 1)
+	go func() {
+		done <- run([]string{"serve", "--port", "0"}, out, errb, env{home: w.home, cwd: w.cwd, clock: kanjotest.FixedClock{T: fixedNow}})
+	}()
+	for i := 0; i < 100 && !strings.Contains(out.String(), "serving on"); i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil { // serve has installed its handler: the test process survives
+		t.Fatal(err)
+	}
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errb.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("serve ignored SIGTERM")
 	}
 }

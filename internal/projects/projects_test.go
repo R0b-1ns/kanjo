@@ -56,6 +56,9 @@ func TestReadsEachProjectIndependently(t *testing.T) {
 
 func TestMissingDatabaseIsAnEmptyProject(t *testing.T) {
 	folder := filepath.Join(t.TempDir(), "never-snapshotted")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	res := projects.Read(context.Background(), []string{folder})
 	if len(res.Failed) != 0 || len(res.Projects) != 1 || res.Projects[0].Name != "never-snapshotted" || len(res.Projects[0].Rows) != 0 {
 		t.Fatalf("result = %+v", res)
@@ -153,5 +156,28 @@ func TestFailureCarriesNoPath(t *testing.T) {
 		if name != "app-b" {
 			t.Fatalf("failed entry %q must be the bare project name", name)
 		}
+	}
+}
+
+func TestAMissingProjectFolderIsReportedNotEmpty(t *testing.T) {
+	res := projects.Read(context.Background(), []string{filepath.Join(t.TempDir(), "typo")})
+	if !reflect.DeepEqual(res.Failed, []string{"typo"}) || len(res.Projects) != 0 {
+		t.Fatalf("a folder that does not exist (typo, moved project) must not read as empty: %+v", res)
+	}
+}
+
+func TestASymlinkedDataFolderIsRefusedNotFollowed(t *testing.T) {
+	root := t.TempDir()
+	real := project(t, root, "real", row("ABC-1"))
+	planted := filepath.Join(root, "planted")
+	if err := os.MkdirAll(planted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(real, ".ai-usage"), filepath.Join(planted, ".ai-usage")); err != nil {
+		t.Fatal(err)
+	}
+	res := projects.Read(context.Background(), []string{planted})
+	if !reflect.DeepEqual(res.Failed, []string{"planted"}) || len(res.Projects) != 0 {
+		t.Fatalf("a .ai-usage link from an untrusted project must be refused: %+v", res)
 	}
 }

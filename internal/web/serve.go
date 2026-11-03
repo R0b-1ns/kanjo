@@ -39,15 +39,19 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 		return fmt.Errorf("refusing to serve on %s: only 127.0.0.1 is allowed", ln.Addr())
 	}
 	srv := NewServer(h)
-	done := make(chan struct{})
+	done, ended := make(chan struct{}), make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		stop, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		srv.Shutdown(stop)
-		close(done)
+		select {
+		case <-ctx.Done():
+			stop, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			srv.Shutdown(stop)
+			close(done)
+		case <-ended: // Serve failed by itself: nothing to shut down
+		}
 	}()
 	err := srv.Serve(ln)
+	close(ended)
 	if errors.Is(err, http.ErrServerClosed) {
 		<-done
 		return nil

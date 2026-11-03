@@ -56,9 +56,17 @@ func mustRead(t *testing.T, path string) string {
 	return string(b)
 }
 
+func TestPricesCheckTodayInATimezoneAheadOfUTCIsNotTheFuture(t *testing.T) {
+	w := newWorld(t) // now is 2026-11-03 12:00 UTC: it is already the 4th in Auckland
+	w.pricesFetched("2026-11-04")
+	if code, out, _ := w.run("prices", "check"); code != 0 || strings.Contains(out, "future") {
+		t.Fatalf("code %d\n%s", code, out)
+	}
+}
+
 func TestPricesCheckFutureDateWarns(t *testing.T) {
 	w := newWorld(t)
-	w.pricesFetched("2026-11-04")
+	w.pricesFetched("2026-11-05")
 	if code, out, _ := w.run("prices", "check"); code != 3 || !strings.Contains(out, "warning: price file date is in the future") {
 		t.Fatalf("code %d\n%s", code, out)
 	}
@@ -122,5 +130,14 @@ func TestPricesCheckAllRefusesAnUnreadableProject(t *testing.T) {
 	code, out, errb := w.run("prices", "check", "--all")
 	if code != 1 || !strings.Contains(errb, "project app-b could not be read") || strings.Contains(out, "has no price") {
 		t.Fatalf("a check that skips unreadable data would wrongly say all is priced: code %d out %q err %q", code, out, errb)
+	}
+}
+
+func TestPricesCheckAllWithoutProjectsSaysSo(t *testing.T) {
+	w := newWorld(t)
+	w.pricesFetched("2026-11-01")
+	code, out, _ := w.run("prices", "check", "--all")
+	if code != 3 || !strings.Contains(out, "warning: no projects listed in the user config; nothing was checked") {
+		t.Fatalf("an empty project list must not read as all priced: code %d\n%s", code, out)
 	}
 }

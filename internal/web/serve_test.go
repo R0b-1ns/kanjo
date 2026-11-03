@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -99,5 +100,25 @@ func TestServeStopsWhenTheContextEnds(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Serve did not stop")
+	}
+}
+
+func TestServeLeavesNothingBehindWhenTheListenerFails(t *testing.T) {
+	before := runtime.NumGoroutine()
+	for i := 0; i < 5; i++ {
+		ln, err := web.ListenLoopback(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ln.Close() // Serve fails at once with an accept error, the context never ends
+		if err := web.Serve(context.Background(), ln, handler()); err == nil {
+			t.Fatal("serving on a closed listener must fail")
+		}
+	}
+	for i := 0; i < 50 && runtime.NumGoroutine() > before; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("goroutines: %d before, %d after: Serve leaves its shutdown goroutine waiting", before, after)
 	}
 }

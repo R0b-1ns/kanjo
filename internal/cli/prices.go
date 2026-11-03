@@ -49,6 +49,9 @@ func pricesCmd(args []string, stdout, stderr io.Writer, e env) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
+	if o.all && len(cfg.Projects) == 0 {
+		warnings = append(warnings, "no projects listed in the user config; nothing was checked")
+	}
 	warnings = append(warnings, unpricedWarnings(data, book)...)
 	for _, w := range warnings {
 		fmt.Fprintln(stdout, "warning: "+w)
@@ -67,10 +70,11 @@ func priceAge(fetched string, now time.Time, maxDays int) (line string, warnings
 	if err != nil { // Parse already validated the date
 		return "", nil
 	}
-	if now.Before(t) {
+	// A date up to one day ahead is today in a timezone ahead of UTC.
+	if t.Sub(now) > 24*time.Hour {
 		return "", []string{"price file date is in the future"}
 	}
-	days := int(now.Sub(t) / (24 * time.Hour))
+	days := int(now.Sub(t) / (24 * time.Hour)) // 0 for a date one day ahead
 	line = fmt.Sprintf("age: %d days (limit %d)\n", days, maxDays)
 	if days > maxDays {
 		warnings = []string{fmt.Sprintf("prices are %d days old (limit %d); update the file", days, maxDays)}

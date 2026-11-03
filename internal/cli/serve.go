@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/R0b-1ns/kanjo/internal/config"
 	"github.com/R0b-1ns/kanjo/internal/core"
@@ -45,6 +48,9 @@ func serveCmd(args []string, stdout, stderr io.Writer, e env) int {
 		fmt.Fprintf(stderr, "kanjo serve: invalid --port %d: want 0 to 65535\n", port)
 		return 2
 	}
+	// Only serve takes over Ctrl-C: the other commands keep the default.
+	ctx, stop := signal.NotifyContext(e.context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	ln, err := web.ListenLoopback(port)
 	if err != nil {
 		return fail(stderr, err)
@@ -52,7 +58,7 @@ func serveCmd(args []string, stdout, stderr io.Writer, e env) int {
 	defer ln.Close()
 	actual := ln.Addr().(*net.TCPAddr).Port
 	fmt.Fprintf(stdout, "serving on http://127.0.0.1:%d/\n", actual)
-	if err := web.Serve(e.context(), ln, web.NewHandler(actual, serveLoader(cfg), book)); err != nil {
+	if err := web.Serve(ctx, ln, web.NewHandler(actual, serveLoader(cfg), book)); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
