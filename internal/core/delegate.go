@@ -166,9 +166,13 @@ func (q DelegateRequest) validateCommands() error {
 	if len(q.Checks) > MaxCheckLogs {
 		return errors.New("too many checks")
 	}
-	cmds := append([]string{q.Setup, q.Test}, q.Checks...)
-	for i, c := range cmds {
-		if (i < 2 && c != "" || i >= 2) && !validCommand(c) { // --setup and --test are optional, a check is not
+	for _, c := range []string{q.Setup, q.Test} { // optional
+		if c != "" && !validCommand(c) {
+			return errors.New("invalid command")
+		}
+	}
+	for _, c := range q.Checks {
+		if !validCommand(c) {
 			return errors.New("invalid command")
 		}
 	}

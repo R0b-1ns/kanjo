@@ -14,7 +14,7 @@ const (
 )
 
 func TestValidRepoPath(t *testing.T) {
-	ok := []string{"src/a.go", "a", "-x", "dir/sub/file.txt", strings.Repeat("a", 256)}
+	ok := []string{"src/a.go", "my file.txt", "a", "-x", "dir/sub/file.txt", strings.Repeat("a", 256)}
 	bad := []string{"..", "a/../b", "/abs", "a//b", "./a", "", "a\nb", "a\x00b", strings.Repeat("a", 257), "a/", "a/.", "a\x7f", "\xff"}
 	for _, p := range ok {
 		if !ValidRepoPath(p) {

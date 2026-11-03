@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"fmt"
 	"path"
 	"slices"
@@ -49,18 +50,8 @@ func ChangedPaths(before, after State) []Change {
 	for _, b := range old {
 		out = append(out, Change{Path: b.Path, Kind: ChangeDeleted, Mode: b.Mode, Link: b.Link})
 	}
-	slices.SortFunc(out, func(a, b Change) int { return compareStrings(a.Path, b.Path) })
+	slices.SortFunc(out, func(a, b Change) int { return cmp.Compare(a.Path, b.Path) })
 	return out
-}
-
-func compareStrings(a, b string) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	}
-	return 0
 }
 
 // missingExpected lists the expected paths that the changes did not add or

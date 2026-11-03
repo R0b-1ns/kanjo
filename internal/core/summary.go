@@ -16,7 +16,7 @@ type Summary struct {
 // NoTask; runs without a label are counted apart.
 func Summarize(recs []RunRecord, task string, since time.Time) Summary {
 	s := Summary{Script: map[RunVerdict]int{}, Lead: map[LeadVerdict]int{}}
-	tasks := map[string]bool{}
+	tasks := map[string]struct{}{}
 	for _, r := range recs {
 		if (task != "" && r.Task != task) || r.StartedAt.Before(since) {
 			continue
@@ -29,7 +29,7 @@ func Summarize(recs []RunRecord, task string, since time.Time) Summary {
 		if r.Task == NoTask {
 			s.Unlabelled++
 		} else {
-			tasks[r.Task] = true
+			tasks[r.Task] = struct{}{}
 		}
 		if r.Lead == nil {
 			s.NoLead++
