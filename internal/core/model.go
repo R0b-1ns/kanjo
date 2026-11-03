@@ -16,7 +16,7 @@ const NoTask = "-"
 
 var (
 	sourceRe  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
-	sessionRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	sessionRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,127}$`) // no leading '-': a CSV cell must not look like a formula
 	modelRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$`)
 	taskRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$`)
 )

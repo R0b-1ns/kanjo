@@ -33,6 +33,7 @@ func TestUsageRowValidate(t *testing.T) {
 		"day bad month":      func(r *UsageRow) { r.Day = "2026-13-01" },
 		"day short":          func(r *UsageRow) { r.Day = "2026-1-1" },
 		"session slash":      func(r *UsageRow) { r.Session = "a/b" },
+		"session leading -":  func(r *UsageRow) { r.Session = "-2-3" },
 		"source upper":       func(r *UsageRow) { r.Source = "Claude" },
 		"negative input":     func(r *UsageRow) { r.Input = -1 },
 		"negative messages":  func(r *UsageRow) { r.Messages = -1 },
