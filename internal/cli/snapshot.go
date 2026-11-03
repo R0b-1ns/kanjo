@@ -44,6 +44,9 @@ func snapshotCmd(args []string, stdout, stderr io.Writer, e env) int {
 		return fail(stderr, err)
 	}
 	defer st.Close()
+	if src.Markers, err = timeline(context.Background(), st); err != nil {
+		return fail(stderr, err)
+	}
 	log, err := core.Snapshot(context.Background(), src, st, e.clock)
 	if err != nil {
 		return fail(stderr, err)
@@ -53,6 +56,20 @@ func snapshotCmd(args []string, stdout, stderr io.Writer, e env) int {
 		fmt.Fprintf(stderr, "warning: %d transcript lines skipped (unreadable or invalid)\n", log.Skipped)
 	}
 	return 0
+}
+
+// timeline reads the marker journal. A stored marker that fails validation
+// stops the snapshot: nothing is attributed from data that cannot be trusted.
+func timeline(ctx context.Context, j core.Journal) (core.Timeline, error) {
+	ms, err := j.Markers(ctx)
+	if err != nil {
+		return core.Timeline{}, fmt.Errorf("read markers: %w", err)
+	}
+	tl, err := core.NewTimeline(ms)
+	if err != nil {
+		return core.Timeline{}, fmt.Errorf("read markers: %w", err)
+	}
+	return tl, nil
 }
 
 // claudeSource builds the transcript source from the configuration.
