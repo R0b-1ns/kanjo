@@ -114,7 +114,7 @@ func TestMapFileDefaultsUnderDataDir(t *testing.T) {
 
 func TestEmptyPatternDisablesHeuristic(t *testing.T) {
 	e := newEnv(t)
-	put(t, filepath.Join(e.cwd, "kanjo.toml"), "[task]\npattern = \"\"\n")
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[task]\npattern = \"\"\n")
 	c, err := e.load(t)
 	if err != nil || c.Task.Pattern != "" {
 		t.Fatalf("pattern = %q, err %v", c.Task.Pattern, err)
@@ -136,7 +136,7 @@ func TestInvalidConfigIsRejected(t *testing.T) {
 	}
 	for name, content := range cases {
 		e := newEnv(t)
-		file := filepath.Join(e.cwd, "kanjo.toml")
+		file := filepath.Join(e.home, ".config", "kanjo", "config.toml")
 		put(t, file, content)
 		_, err := e.load(t)
 		if err == nil {
@@ -192,8 +192,9 @@ func TestLimitsAreInclusive(t *testing.T) {
 	e := newEnv(t)
 	body := "[claude]\nmax_line_bytes = 1\n"
 	pad := "#" + strings.Repeat("x", maxFileBytes-len(body)-2) + "\n"
-	put(t, filepath.Join(e.cwd, "kanjo.toml"), body+pad)
-	if fi, _ := os.Stat(filepath.Join(e.cwd, "kanjo.toml")); fi.Size() != maxFileBytes {
+	userFile := filepath.Join(e.home, ".config", "kanjo", "config.toml")
+	put(t, userFile, body+pad)
+	if fi, _ := os.Stat(userFile); fi.Size() != maxFileBytes {
 		t.Fatalf("test file is %d bytes, want exactly %d", fi.Size(), maxFileBytes)
 	}
 	c, err := e.load(t)
@@ -224,6 +225,8 @@ func TestRepoConfigCannotReachOutsideItsFolder(t *testing.T) {
 		"absolute prices":    "prices_file = \"/etc/passwd\"\n",
 		"absolute task map":  "[task]\nmap_file = \"/tmp/map.tsv\"\n",
 		"projects dir":       "[claude]\nprojects_dir = \"/somewhere\"\n",
+		"label pattern":      "[task]\npattern = \"ghp_[A-Za-z0-9]{36}\"\n",
+		"line limit":         "[claude]\nmax_line_bytes = 9223372036854775807\n",
 		"generic prefix":     "[claude]\nproject_prefixes = [\"-\"]\n",
 		"foreign prefix":     "[claude]\nproject_prefixes = [\"-other-project\"]\n",
 		"one foreign of two": "[claude]\nproject_prefixes = [\"-other\"]\n",
@@ -329,5 +332,47 @@ func TestRepoPrefixMustBeTheFolderNameOrASubName(t *testing.T) {
 		if (err == nil) != ok {
 			t.Errorf("prefix %q+%q: err = %v, want accepted=%v", own, prefix, err, ok)
 		}
+	}
+}
+
+func TestRepoConfigMayNotSetUserOnlyKeys(t *testing.T) {
+	// The label pattern could copy a secret typed in a prompt into the database.
+	for _, content := range []string{"[task]\npattern = \"x\"\n", "[claude]\nmax_line_bytes = 5\n", "[claude]\nprojects_dir = \"x\"\n"} {
+		e := newEnv(t)
+		file := filepath.Join(e.cwd, "kanjo.toml")
+		put(t, file, content)
+		if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), "user config") {
+			t.Errorf("%q: err = %v, want it to say the key is for the user config", content, err)
+		}
+	}
+	e := newEnv(t)
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[task]\npattern = \"TASK-[0-9]+\"\n[claude]\nmax_line_bytes = 5\n")
+	if c, err := e.load(t); err != nil || c.Task.Pattern != "TASK-[0-9]+" || c.Claude.MaxLineBytes != 5 {
+		t.Fatalf("the user config may set them: %+v, %v", c, err)
+	}
+}
+
+func TestDefaultDataDirCannotBeASymlinkOutside(t *testing.T) {
+	e := newEnv(t)
+	outside := t.TempDir()
+	if err := os.MkdirAll(e.cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(e.cwd, ".ai-usage")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), "data_dir") {
+		t.Fatalf("err = %v, want a data_dir refusal (a committed .ai-usage link could redirect writes)", err)
+	}
+	// The user's own choices stay free.
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "data_dir = \""+filepath.Join(e.cwd, ".ai-usage")+"\"\n")
+	if _, err := e.load(t); err != nil {
+		t.Fatalf("user config may use a link: %v", err)
+	}
+	if err := os.Remove(filepath.Join(e.home, ".config", "kanjo", "config.toml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(e.home, e.cwd, e.xdg, Overrides{DataDir: filepath.Join(e.cwd, ".ai-usage")}); err != nil {
+		t.Fatalf("--data-dir may use a link: %v", err)
 	}
 }

@@ -60,6 +60,9 @@ func tomlKeys(t reflect.Type, prefix string) []string {
 	var keys []string
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
+		if f.Tag.Get("toml") == "-" {
+			continue
+		}
 		key := prefix + f.Tag.Get("toml")
 		if f.Type.Kind() == reflect.Struct {
 			keys = append(keys, tomlKeys(f.Type, key+".")...)

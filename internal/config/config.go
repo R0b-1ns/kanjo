@@ -30,6 +30,10 @@ type Config struct {
 	PricesFile string       `toml:"prices_file"`
 	Claude     ClaudeConfig `toml:"claude"`
 	Task       TaskConfig   `toml:"task"`
+
+	// trustedData is true when the user config set data_dir; a data_dir that
+	// comes from a repository or from the default is checked against symlinks.
+	trustedData bool `toml:"-"`
 }
 
 // ClaudeConfig configures the Claude Code transcript source.
@@ -86,6 +90,9 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 		c.DataDir = over.DataDir
 	}
 	c.resolve(cwd)
+	if over.DataDir == "" && !c.trustedData && !within(cwd, c.DataDir) {
+		return Config{}, fmt.Errorf("data_dir %s must stay inside %s unless it is set in the user config or by --data-dir", c.DataDir, cwd)
+	}
 	return c, nil
 }
 
@@ -107,6 +114,9 @@ func mergeFile(c *Config, path, repoDir string) error {
 	}
 	if err := c.check(); err != nil {
 		return fmt.Errorf("config %s: %w", path, err)
+	}
+	if md.IsDefined("data_dir") {
+		c.trustedData = repoDir == ""
 	}
 	if repoDir != "" {
 		if err := c.checkRepo(md, repoDir); err != nil {
@@ -134,21 +144,45 @@ func readFile(path string) ([]byte, error) {
 	return data, err
 }
 
-// checkRepo limits what a repository's kanjo.toml may set: it must not send
-// data, prices or the task map outside its own folder, point at another
-// transcript folder, or widen the projects read beyond this folder's own name.
+// repoKeys are the only keys a repository's kanjo.toml may set (repoTables are
+// their parent tables). Everything else could copy secrets into the database,
+// exhaust memory or read other projects, so it is for the user config or flags.
+var (
+	repoKeys   = map[string]bool{"data_dir": true, "prices_file": true, "task.map_file": true, "claude.project_prefixes": true}
+	repoTables = map[string]bool{"claude": true, "task": true}
+)
+
+// checkRepo limits what a repository's kanjo.toml may set: only repoKeys; its
+// paths must stay inside its own folder (symbolic links resolved); and
+// project_prefixes may only widen to sub-names of the folder's own name.
 // The user config and command-line flags are not restricted.
 func (c Config) checkRepo(md toml.MetaData, cwd string) error {
-	if md.IsDefined("claude", "projects_dir") {
-		return errors.New("claude.projects_dir may only be set in the user config or by flag")
-	}
-	if own := ProjectFolderName(cwd); md.IsDefined("claude", "project_prefixes") {
-		for _, p := range c.Claude.ProjectPrefixes {
-			if p != own && !strings.HasPrefix(p, own+"-") {
-				return fmt.Errorf("claude.project_prefixes in a repository config must be %q (this folder's name) or start with %q; widen it in the user config", own, own+"-")
-			}
+	return errors.Join(checkRepoKeys(md), c.checkRepoPrefixes(md, cwd), c.checkRepoPaths(md, cwd))
+}
+
+func checkRepoKeys(md toml.MetaData) error {
+	for _, k := range md.Keys() {
+		if name := strings.Join(k, "."); !repoKeys[name] && !repoTables[name] {
+			return fmt.Errorf("%s may only be set in the user config or by flag", name)
 		}
 	}
+	return nil
+}
+
+func (c Config) checkRepoPrefixes(md toml.MetaData, cwd string) error {
+	own := ProjectFolderName(cwd)
+	if !md.IsDefined("claude", "project_prefixes") {
+		return nil
+	}
+	for _, p := range c.Claude.ProjectPrefixes {
+		if p != own && !strings.HasPrefix(p, own+"-") {
+			return fmt.Errorf("claude.project_prefixes in a repository config must be %q (this folder's name) or start with %q; widen it in the user config", own, own+"-")
+		}
+	}
+	return nil
+}
+
+func (c Config) checkRepoPaths(md toml.MetaData, cwd string) error {
 	for _, f := range []struct {
 		key  []string
 		path string
