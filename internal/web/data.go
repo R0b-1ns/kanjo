@@ -84,27 +84,28 @@ func parseRequest(rawQuery string) (request, bool) {
 	if err != nil {
 		return request{}, false
 	}
-	req := request{scope: "project"}
+	req := request{scope: "project", query: core.Query{By: "task"}} // By: any valid grouping, only the filters are checked
 	for key, v := range vals {
-		if len(v) != 1 {
-			return request{}, false
-		}
-		switch key {
-		case "scope":
-			req.scope = v[0]
-		case "task":
-			req.query.Task = v[0]
-		case "since":
-			req.query.Since = v[0]
-		default:
+		if len(v) != 1 || !req.set(key, v[0]) {
 			return request{}, false
 		}
 	}
-	req.query.By = "task" // any valid grouping: only the filters are checked
-	if (req.scope != "project" && req.scope != "all") || req.query.Validate() != nil {
-		return request{}, false
+	return req, (req.scope == "project" || req.scope == "all") && req.query.Validate() == nil
+}
+
+// set stores one query parameter; false means the parameter is unknown.
+func (r *request) set(key, value string) bool {
+	switch key {
+	case "scope":
+		r.scope = value
+	case "task":
+		r.query.Task = value
+	case "since":
+		r.query.Since = value
+	default:
+		return false
 	}
-	return req, true
+	return true
 }
 
 func (s *server) data(w http.ResponseWriter, r *http.Request) {
