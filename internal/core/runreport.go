@@ -79,6 +79,10 @@ type usageSum struct {
 // addUsage folds one launch's usage into the run's, per model.
 func (g *delegation) addUsage(us []ModelUsage) {
 	for _, u := range us {
+		if !ValidModel(u.Model) { // untrusted: it would reach the report and the rows
+			g.warn("usage of a model with an invalid id was dropped")
+			continue
+		}
 		if g.usage == nil {
 			g.usage = map[string]*usageSum{}
 		}

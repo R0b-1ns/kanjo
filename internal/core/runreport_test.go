@@ -251,3 +251,22 @@ func TestCanaryNeverInReportOrRows(t *testing.T) {
 		t.Error("the test is blind: the canary should be in agent.log")
 	}
 }
+
+func TestHostileModelIdNeverReachesTheReport(t *testing.T) {
+	const hostile = "evil\x1b[31m\nmodel"
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("src/a.go", "x"), kanjotest.ReportUsage(hostile, core.Tokens{Input: 1}, nil), kanjotest.ReportUsage("good-model", core.Tokens{Input: 2}, nil)})
+	out := r.run(r.req())
+	js, _ := json.Marshal(out.Report)
+	txt, _ := r.art.Read(testSession, core.ArtReportTXT)
+	for _, s := range []string{string(js), out.Text, string(txt)} {
+		if strings.ContainsAny(s, "\x1b") || strings.Contains(s, "evil") {
+			t.Fatalf("hostile model id leaked: %q", s)
+		}
+	}
+	if len(out.Report.Tokens.ByModel) != 1 || out.Report.Tokens.ByModel[0].Model != "good-model" || len(out.Warnings) == 0 {
+		t.Fatalf("report = %+v warnings %v", out.Report.Tokens, out.Warnings)
+	}
+	if rows, _ := r.st.Rows(context.Background()); len(rows) != 1 {
+		t.Fatalf("rows = %+v", rows)
+	}
+}
