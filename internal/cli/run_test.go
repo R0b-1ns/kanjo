@@ -286,3 +286,5 @@ func TestCanaryNeverInRunOutputReportOrDatabase(t *testing.T) {
 		}
 	}
 }
+
+func openStoreAt(dir string) (*sqlitestore.Store, error) { return sqlitestore.Open(dir) }

@@ -48,6 +48,7 @@ var commands = map[string]command{
 	"self-update": selfUpdateCmd,
 	"serve":       serveCmd,
 	"snapshot":    snapshotCmd,
+	"summary":     summaryCmd,
 	"usage":       usageCmd,
 	"version": func(_ []string, stdout, _ io.Writer, _ env) int {
 		fmt.Fprintf(stdout, "kanjo %s\n", Version)

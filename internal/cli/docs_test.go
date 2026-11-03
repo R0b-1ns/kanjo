@@ -30,6 +30,7 @@ func TestEveryCommandHasAPageDocumentingItsFlags(t *testing.T) {
 		"run":         func(fs *flag.FlagSet) { runFlags(fs) },
 		"serve":       func(fs *flag.FlagSet) { serveFlags(fs) },
 		"snapshot":    func(fs *flag.FlagSet) { snapshotFlags(fs) },
+		"summary":     func(fs *flag.FlagSet) { summaryFlags(fs) },
 		"usage":       func(fs *flag.FlagSet) { usageFlags(fs) },
 		"self-update": func(fs *flag.FlagSet) { selfUpdateFlags(fs) },
 		"version":     func(*flag.FlagSet) {},
