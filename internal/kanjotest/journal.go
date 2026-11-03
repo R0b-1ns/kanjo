@@ -85,10 +85,7 @@ func allOf(t *testing.T, j core.Journal) []core.Marker {
 	return ms
 }
 
-var journalCases = []struct {
-	name string
-	run  func(t *testing.T, j core.Journal)
-}{
+var journalCases = []contractCase[core.Journal]{
 	{"an empty journal has no events", func(t *testing.T, j core.Journal) {
 		if ms := allOf(t, j); len(ms) != 0 {
 			t.Fatalf("events = %v", ms)
@@ -192,7 +189,5 @@ var journalCases = []struct {
 // JournalContract checks the behavior every core.Journal must have. open
 // must return a fresh, empty journal.
 func JournalContract(t *testing.T, open func(t *testing.T) core.Journal) {
-	for _, c := range journalCases {
-		t.Run(c.name, func(t *testing.T) { c.run(t, open(t)) })
-	}
+	runCases(t, journalCases, open)
 }

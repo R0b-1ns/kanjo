@@ -35,11 +35,21 @@ func (m Marker) Validate() error {
 		return errors.New("marker has no time")
 	case m.Session != "" && !ValidSession(m.Session):
 		return errors.New("invalid session id")
-	case m.Kind == MarkStart && (m.Task == NoTask || !ValidTask(m.Task)):
-		return errors.New("invalid task label")
-	case m.Kind == MarkEnd && m.Task != "":
-		return errors.New("an end carries no task")
-	case m.Kind != MarkStart && m.Kind != MarkEnd:
+	}
+	return m.validateKind()
+}
+
+func (m Marker) validateKind() error {
+	switch m.Kind {
+	case MarkStart:
+		if m.Task == NoTask || !ValidTask(m.Task) {
+			return errors.New("invalid task label")
+		}
+	case MarkEnd:
+		if m.Task != "" {
+			return errors.New("an end carries no task")
+		}
+	default:
 		return errors.New("invalid marker kind")
 	}
 	return nil

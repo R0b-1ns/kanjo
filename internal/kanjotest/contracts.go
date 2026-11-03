@@ -75,10 +75,19 @@ func wantRows(t *testing.T, s core.Store, want []core.UsageRow) {
 	}
 }
 
-var storeCases = []struct {
+// contractCase is one named behavior of a port, checked on a fresh instance.
+type contractCase[T any] struct {
 	name string
-	run  func(t *testing.T, s core.Store)
-}{
+	run  func(t *testing.T, port T)
+}
+
+func runCases[T any](t *testing.T, cases []contractCase[T], open func(t *testing.T) T) {
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) { c.run(t, open(t)) })
+	}
+}
+
+var storeCases = []contractCase[core.Store]{
 	{"empty store has no rows or sessions", func(t *testing.T, s core.Store) {
 		wantRows(t, s, []core.UsageRow{})
 		if ss := sessionsOf(t, s); len(ss) != 0 {
@@ -187,9 +196,7 @@ var storeCases = []struct {
 // StoreContract checks the behavior every core.Store must have. open must
 // return a fresh, empty store.
 func StoreContract(t *testing.T, open func(t *testing.T) core.Store) {
-	for _, c := range storeCases {
-		t.Run(c.name, func(t *testing.T) { c.run(t, open(t)) })
-	}
+	runCases(t, storeCases, open)
 }
 
 // PriceBookContract checks a core.PriceBook; known is a model it prices.
