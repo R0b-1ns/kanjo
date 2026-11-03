@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "session": "ses_20261103T120000_a1b2c3",
+  "task": "ABC-12",
+  "adapter": "script",
+  "model": "test-model",
+  "verdict": "ok-to-review",
+  "reasons": [],
+  "exit_code": 0,
+  "started_at": "2026-11-03T12:00:00.000Z",
+  "duration_ms": 0,
+  "launches": 2,
+  "retries": 1,
+  "timed_out": false,
+  "tokens": {
+    "status": "available",
+    "by_model": [
+      {
+        "model": "model-a",
+        "input": 3,
+        "output": 0,
+        "reasoning": 0,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_read": 0,
+        "cost_usd": null
+      },
+      {
+        "model": "model-b",
+        "input": 15,
+        "output": 1,
+        "reasoning": 0,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_read": 7,
+        "cost_usd": 0.75
+      }
+    ]
+  },
+  "files": {
+    "expected": [
+      "src/a.go"
+    ],
+    "missing": [],
+    "forbidden_touched": [],
+    "unexpected": [],
+    "unsafe_symlinks": []
+  },
+  "steps": [
+    {
+      "name": "setup",
+      "exit": 0,
+      "duration_ms": 0,
+      "timed_out": false
+    },
+    {
+      "name": "agent",
+      "exit": 0,
+      "duration_ms": 0,
+      "timed_out": false
+    },
+    {
+      "name": "test",
+      "exit": 0,
+      "duration_ms": 0,
+      "timed_out": false
+    },
+    {
+      "name": "check-1",
+      "exit": 0,
+      "duration_ms": 0,
+      "timed_out": false
+    }
+  ],
+  "base": "1111111111111111111111111111111111111111",
+  "branch": "delegate/ses_20261103T120000_a1b2c3",
+  "patch": "changes.patch"
+}

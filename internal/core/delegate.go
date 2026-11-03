@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -101,6 +102,8 @@ type DelegateRequest struct {
 type DelegateOutcome struct {
 	Session string
 	Result  RunResult
+	Report  RunReport
+	Text    string // report.txt
 	// Warnings are problems that did not change the verdict (a file that could
 	// not be written, a record that could not be completed).
 	Warnings []string
@@ -199,6 +202,9 @@ type delegation struct {
 	log           io.Writer
 	agentStep     StepResult
 	steps         []StepResult
+	findings      Findings
+	patchKept     bool
+	usage         map[string]*usageSum
 }
 
 func (g *delegation) fail(r Reason) { g.reasons = append(g.reasons, r) }
@@ -326,6 +332,8 @@ func (g *delegation) writePatch() {
 	default:
 		if err := g.d.Artifacts.Write(bk, g.run.Session, ArtPatch, buf.Bytes()); err != nil {
 			g.warn("could not write " + string(ArtPatch))
+		} else {
+			g.patchKept = true
 		}
 	}
 }
@@ -394,6 +402,7 @@ func (g *delegation) agentPhase() bool {
 // judge compares the final state with the limits of the task.
 func (g *delegation) judge() {
 	f := JudgeChanges(ChangedPaths(g.before, g.after), g.req.Expect, g.req.Forbid)
+	g.findings = f
 	for _, c := range []struct {
 		found  bool
 		reason Reason
@@ -427,6 +436,7 @@ func (g *delegation) runAgent(ctx context.Context, prompt string, resume bool) b
 	g.launches++
 	g.agentOK = false
 	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume, Log: g.log})
+	g.addUsage(res.Usage)
 	g.agentStep.Name, g.agentStep.Exit = "agent", res.Exit
 	g.agentStep.Duration += res.Duration
 	g.agentStep.TimedOut = res.Killed && errors.Is(context.Cause(ctx), errAgentTimeout)
@@ -470,7 +480,8 @@ func killedReason(ctx context.Context) Reason {
 	return ReasonAgentFailed // it stopped without being asked to
 }
 
-// complete writes the final row. It runs before the lock is released.
+// complete writes the report, the usage rows and the final row, in this order.
+// It runs before the lock is released.
 func (g *delegation) complete() DelegateOutcome {
 	bk, cancel := g.bookkeeping()
 	defer cancel()
@@ -480,10 +491,53 @@ func (g *delegation) complete() DelegateOutcome {
 		Verdict: v, Exit: v.ExitCode(), FinishedAt: now, Launches: g.launches, Retries: g.retries,
 		Duration: max(0, now.Sub(g.run.StartedAt)), Tip: g.after.Head,
 	}
+	rep := g.report(res)
+	g.writeReport(bk, rep)
+	g.recordUsage(bk, now)
 	// A journal that cannot be written leaves the row running; the next
 	// finish or clean completes it as interrupted.
 	if err := g.d.Journal.Finish(bk, g.run.Session, res); err != nil {
 		g.warn("the run record could not be completed: " + err.Error())
 	}
-	return DelegateOutcome{Session: g.run.Session, Result: res, Warnings: g.warnings}
+	return DelegateOutcome{Session: g.run.Session, Result: res, Report: rep, Text: rep.Text(""), Warnings: g.warnings}
+}
+
+// writeReport saves report.json and report.txt.
+func (g *delegation) writeReport(ctx context.Context, rep RunReport) {
+	js, err := json.MarshalIndent(rep, "", "  ")
+	if err == nil {
+		err = g.d.Artifacts.Write(ctx, g.run.Session, ArtReportJSON, append(js, '\n'))
+	}
+	if err != nil {
+		g.warn("could not write " + string(ArtReportJSON))
+	}
+	if err := g.d.Artifacts.Write(ctx, g.run.Session, ArtReportTXT, []byte(rep.Text(""))); err != nil {
+		g.warn("could not write " + string(ArtReportTXT))
+	}
+}
+
+// recordUsage saves one usage row per model, marked as attributed to the task
+// (the command line fixed the task). Nothing is saved when the agent reported
+// no usage.
+func (g *delegation) recordUsage(ctx context.Context, now time.Time) {
+	var rows []UsageRow
+	for _, m := range g.models() {
+		u := g.usage[m]
+		row := UsageRow{
+			Key:      Key{Source: g.run.Adapter, Session: g.run.Session, Day: g.run.StartedAt.UTC().Format("2006-01-02"), Task: g.run.Task, Model: m},
+			Messages: int64(g.launches), Marked: int64(g.launches), Tokens: u.tokens, CostReportedUSD: u.costPtr(),
+		}
+		if err := row.Validate(); err != nil {
+			g.warn("usage of one model was not saved: " + err.Error())
+			continue
+		}
+		rows = append(rows, row)
+	}
+	if len(rows) == 0 {
+		return
+	}
+	batch := Batch{Rows: rows, Sessions: []SessionInfo{{Source: g.run.Adapter, Session: g.run.Session, TaskSource: "none"}}}
+	if err := g.d.Store.Merge(ctx, batch, SnapshotLog{At: now, Sessions: 1, Rows: len(rows)}); err != nil {
+		g.warn("usage was not saved: " + err.Error())
+	}
 }
