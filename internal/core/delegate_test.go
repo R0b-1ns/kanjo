@@ -324,3 +324,119 @@ func TestInterruptDuringSetupIsInterrupted(t *testing.T) {
 		t.Fatalf("outcome %+v err %v launches %d", out.Result, err, r.agent.Launches())
 	}
 }
+
+// deadlineAgent records the deadline of each launch and delegates to a scripted agent.
+type deadlineAgent struct {
+	*kanjotest.ScriptedAgent
+	deadlines []time.Time
+}
+
+func (a *deadlineAgent) Run(ctx context.Context, b core.Box, req core.AgentRequest) (core.AgentResult, error) {
+	dl, _ := ctx.Deadline()
+	a.deadlines = append(a.deadlines, dl)
+	return a.ScriptedAgent.Run(ctx, b, req)
+}
+
+func TestRetriesOnceWhenAFileIsMissing(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("other.txt", "x")}, writeA)
+	out := r.run(r.req())
+	rec := r.record()
+	if out.Result.Verdict != core.RunOK || rec.Launches != 2 || rec.Retries != 1 || r.agent.Launches() != 2 {
+		t.Fatalf("outcome %+v record %+v", out.Result, rec)
+	}
+}
+
+func TestStillMissingAfterTheRetryFails(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{}, []kanjotest.AgentStep{})
+	out := r.run(r.req())
+	if out.Result.Verdict != core.RunFailed || out.Result.Launches != 2 || r.agent.Launches() != 2 {
+		t.Fatalf("outcome %+v launches %d", out.Result, r.agent.Launches())
+	}
+}
+
+func TestNoRetryAfterQuota(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.ExhaustQuota()}, writeA)
+	if out := r.run(r.req()); out.Result.Launches != 1 || r.agent.Launches() != 1 || out.Result.Verdict != core.RunQuota {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestNoRetryAfterAKill(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Loop()}, writeA)
+	req := r.req()
+	req.Timeout = 30 * time.Millisecond
+	if out := r.run(req); out.Result.Launches != 1 || r.agent.Launches() != 1 || out.Result.Verdict != core.RunTimeout {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestNoRetryAfterANonZeroExit(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Fail(2)}, writeA)
+	if out := r.run(r.req()); out.Result.Launches != 1 || r.agent.Launches() != 1 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestNoRetryWhenNothingIsMissing(t *testing.T) {
+	r := newRig(t, writeA, writeA)
+	if out := r.run(r.req()); out.Result.Launches != 1 || out.Result.Retries != 0 || r.agent.Launches() != 1 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestNoRetryWithoutExpectedFiles(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{}, writeA)
+	req := r.req()
+	req.Expect = nil
+	if out := r.run(req); out.Result.Launches != 1 || out.Result.Verdict != core.RunOK {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestRetryUsesTheSameSession(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{}, writeA)
+	r.run(r.req())
+	reqs := r.agent.Requests()
+	if len(reqs) != 2 || reqs[0].Resume || !reqs[1].Resume || reqs[0].Session != reqs[1].Session || reqs[1].Session != testSession || reqs[1].Model != "test-model" {
+		t.Fatalf("requests = %+v", reqs)
+	}
+	if reqs[0].Prompt != "write the file" {
+		t.Errorf("first prompt = %q", reqs[0].Prompt)
+	}
+}
+
+func TestRetryPromptNamesOnlyValidatedPaths(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{}, writeA)
+	req := r.req()
+	req.Expect = []string{"src/a.go", "src/b.go"}
+	r.run(req)
+	got := r.agent.Requests()[1].Prompt
+	if got != core.RetryPrompt([]string{"src/a.go", "src/b.go"}) {
+		t.Fatalf("prompt = %q", got)
+	}
+	for _, bad := range [][]string{{"../x"}, {"a\nb"}, {""}, {"/etc/passwd"}} {
+		if p := core.RetryPrompt(append([]string{"src/a.go"}, bad...)); p != core.RetryPrompt([]string{"src/a.go"}) {
+			t.Errorf("RetryPrompt kept %q: %q", bad, p)
+		}
+	}
+}
+
+func TestTimeoutCoversBothLaunches(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{}, []kanjotest.AgentStep{kanjotest.Loop()})
+	da := &deadlineAgent{ScriptedAgent: r.agent}
+	deps := r.deps()
+	deps.Agent = da
+	req := r.req()
+	req.Timeout = 80 * time.Millisecond
+	start := time.Now()
+	out, err := core.Delegate(context.Background(), deps, req)
+	if err != nil || out.Result.Verdict != core.RunTimeout || out.Result.Launches != 2 {
+		t.Fatalf("outcome %+v err %v", out.Result, err)
+	}
+	if len(da.deadlines) != 2 || !da.deadlines[0].Equal(da.deadlines[1]) {
+		t.Fatalf("deadlines differ: %v", da.deadlines)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("the second launch got a fresh delay")
+	}
+}

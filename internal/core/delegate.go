@@ -20,6 +20,7 @@ const (
 	ReasonQuota           Reason = "quota-exhausted"
 	ReasonInterrupted     Reason = "interrupted"
 	ReasonStray           Reason = "stray-files"
+	ReasonMissing         Reason = "missing-files"
 )
 
 // reasonVerdict says which verdict a reason leads to.
@@ -32,6 +33,7 @@ var reasonVerdict = map[Reason]RunVerdict{
 	ReasonQuota:           RunQuota,
 	ReasonInterrupted:     RunInterrupted,
 	ReasonStray:           RunStray,
+	ReasonMissing:         RunFailed,
 }
 
 // errAgentTimeout is the cause of the agent phase's deadline.
@@ -176,10 +178,11 @@ type delegation struct {
 	box  Box
 	made bool // the workspace exists
 
-	reasons  []Reason
-	warnings []string
-	launches int
-	tip      string
+	reasons       []Reason
+	warnings      []string
+	launches      int
+	retries       int
+	before, after State
 }
 
 func (g *delegation) fail(r Reason) { g.reasons = append(g.reasons, r) }
@@ -213,9 +216,8 @@ func (g *delegation) phases() {
 		return
 	}
 	if g.setup() {
-		g.launch()
+		g.agentPhase()
 	}
-	g.takeTip()
 }
 
 // setup runs --setup and reports whether the agent may start.
@@ -267,11 +269,46 @@ func (g *delegation) openBox() bool {
 	return true
 }
 
-func (g *delegation) launch() {
-	g.launches++
+// agentPhase runs the agent, and once more in the same session when expected
+// files are missing after a normal first launch. One deadline covers both.
+func (g *delegation) agentPhase() {
 	ctx, cancel := context.WithTimeoutCause(g.ctx, g.req.Timeout, errAgentTimeout)
 	defer cancel()
-	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: g.req.Prompt})
+	if !g.snapshot(&g.before) {
+		return
+	}
+	if !g.runAgent(ctx, g.req.Prompt, false) || !g.snapshot(&g.after) {
+		return
+	}
+	missing := missingExpected(ChangedPaths(g.before, g.after), g.req.Expect)
+	if len(missing) == 0 {
+		return
+	}
+	g.retries++
+	if g.runAgent(ctx, RetryPrompt(missing), true) && g.snapshot(&g.after) &&
+		len(missingExpected(ChangedPaths(g.before, g.after), g.req.Expect)) > 0 {
+		g.fail(ReasonMissing)
+	}
+}
+
+// snapshot reads the worktree state into dst; a failure ends the run.
+func (g *delegation) snapshot(dst *State) bool {
+	bk, cancel := g.bookkeeping()
+	defer cancel()
+	st, err := g.d.Workspace.State(bk, g.w)
+	if err != nil {
+		g.fail(ReasonWorkspaceFailed)
+		return false
+	}
+	*dst = st
+	return true
+}
+
+// runAgent launches the agent once and reports whether it ended normally
+// (exit 0, not stopped, no quota); otherwise it records why.
+func (g *delegation) runAgent(ctx context.Context, prompt string, resume bool) bool {
+	g.launches++
+	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume})
 	switch {
 	case err != nil:
 		g.fail(ReasonAgentFailed)
@@ -281,7 +318,23 @@ func (g *delegation) launch() {
 		g.fail(ReasonQuota)
 	case res.Exit != 0:
 		g.fail(ReasonAgentFailed)
+	default:
+		return true
 	}
+	return false
+}
+
+// RetryPrompt is the fixed text of the second launch. Only valid repository
+// paths are named in it.
+func RetryPrompt(missing []string) string {
+	var b strings.Builder
+	b.WriteString("These expected files are missing. Create or update them now and keep the rest of your work as it is:")
+	for _, p := range missing {
+		if ValidRepoPath(p) {
+			b.WriteString("\n- " + p)
+		}
+	}
+	return b.String()
 }
 
 // killedReason tells the watchdog (the phase's deadline) from an interruption
@@ -296,15 +349,6 @@ func killedReason(ctx context.Context) Reason {
 	return ReasonAgentFailed // it stopped without being asked to
 }
 
-// takeTip records where the branch points at the end of the run.
-func (g *delegation) takeTip() {
-	bk, cancel := g.bookkeeping()
-	defer cancel()
-	if st, err := g.d.Workspace.State(bk, g.w); err == nil {
-		g.tip = st.Head
-	}
-}
-
 // complete writes the final row. It runs before the lock is released.
 func (g *delegation) complete() DelegateOutcome {
 	bk, cancel := g.bookkeeping()
@@ -312,8 +356,8 @@ func (g *delegation) complete() DelegateOutcome {
 	now := g.d.Clock.Now()
 	v := verdictOf(g.reasons)
 	res := RunResult{
-		Verdict: v, Exit: v.ExitCode(), FinishedAt: now, Launches: g.launches,
-		Duration: max(0, now.Sub(g.run.StartedAt)), Tip: g.tip,
+		Verdict: v, Exit: v.ExitCode(), FinishedAt: now, Launches: g.launches, Retries: g.retries,
+		Duration: max(0, now.Sub(g.run.StartedAt)), Tip: g.after.Head,
 	}
 	// A journal that cannot be written leaves the row running; the next
 	// finish or clean completes it as interrupted.
