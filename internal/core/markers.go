@@ -83,20 +83,27 @@ func NewTimeline(ms []Marker) (Timeline, error) {
 // TaskAt returns the task of the session's own timeline at the instant, else
 // the global one; ok is false when neither has a task running.
 func (t Timeline) TaskAt(session string, at time.Time) (task string, ok bool) {
-	if session != "" {
-		if task, ok = t.scopeTaskAt(session, at); ok {
-			return task, true
-		}
-	}
-	return t.scopeTaskAt("", at)
+	m, ok := t.ActiveAt(session, at)
+	return m.Task, ok
 }
 
-// scopeTaskAt looks at the latest event of one scope at or before the instant.
-func (t Timeline) scopeTaskAt(scope string, at time.Time) (string, bool) {
+// ActiveAt returns the start marker that assigns a task at the instant: the
+// session's own, else the global one.
+func (t Timeline) ActiveAt(session string, at time.Time) (Marker, bool) {
+	if session != "" {
+		if m, ok := t.scopeActiveAt(session, at); ok {
+			return m, true
+		}
+	}
+	return t.scopeActiveAt("", at)
+}
+
+// scopeActiveAt looks at the latest event of one scope at or before the instant.
+func (t Timeline) scopeActiveAt(scope string, at time.Time) (Marker, bool) {
 	s := t.scopes[scope]
 	i := sort.Search(len(s), func(i int) bool { return s[i].At.After(at) })
 	if i == 0 || s[i-1].Kind != MarkStart {
-		return "", false
+		return Marker{}, false
 	}
-	return s[i-1].Task, true
+	return s[i-1], true
 }
