@@ -18,7 +18,7 @@ func newEnv(t *testing.T) env {
 
 func (e env) load(t *testing.T) (Config, error) {
 	t.Helper()
-	return Load(e.home, e.cwd, e.xdg)
+	return Load(e.home, e.cwd, e.xdg, Overrides{})
 }
 
 func put(t *testing.T, path, content string) {
@@ -198,5 +198,17 @@ func TestLimitsAreInclusive(t *testing.T) {
 	c, err := e.load(t)
 	if err != nil || c.Claude.MaxLineBytes != 1 {
 		t.Fatalf("a file of exactly the size limit and max_line_bytes = 1 must be accepted: %v", err)
+	}
+}
+
+func TestDataDirOverrideBeatsFilesAndMovesTaskMap(t *testing.T) {
+	e := newEnv(t)
+	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \"/from/file\"\n")
+	c, err := Load(e.home, e.cwd, e.xdg, Overrides{DataDir: "flag-dir"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DataDir != filepath.Join(e.cwd, "flag-dir") || c.Task.MapFile != filepath.Join(e.cwd, "flag-dir", "claude-tasks.tsv") {
+		t.Fatalf("config = %+v", c)
 	}
 }

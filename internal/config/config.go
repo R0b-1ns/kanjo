@@ -56,9 +56,13 @@ func ProjectFolderName(path string) string {
 	}, path)
 }
 
+// Overrides are command-line values that beat every file; empty means unset.
+type Overrides struct{ DataDir string }
+
 // Load resolves the configuration for a working directory. home is the user's
-// home; xdgConfigHome may be empty. Relative paths in files resolve against cwd.
-func Load(home, cwd, xdgConfigHome string) (Config, error) {
+// home; xdgConfigHome may be empty. Relative paths in files and overrides
+// resolve against cwd.
+func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 	c := Config{
 		DataDir: ".ai-usage",
 		Claude: ClaudeConfig{
@@ -76,6 +80,9 @@ func Load(home, cwd, xdgConfigHome string) (Config, error) {
 		if err := mergeFile(&c, path); err != nil {
 			return Config{}, err
 		}
+	}
+	if over.DataDir != "" {
+		c.DataDir = over.DataDir
 	}
 	c.resolve(cwd)
 	return c, nil
