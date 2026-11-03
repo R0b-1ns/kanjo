@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Candidate is a run that has no lead verdict, so its workspace may be left over.
@@ -29,16 +30,16 @@ func Candidates(ctx context.Context, d FinishDeps) ([]Candidate, error) {
 			continue
 		}
 		p, _ := d.Workspace.Inspect(ctx, ownedOf(r)) // a folder that is not ours reads as absent
-		out = append(out, Candidate{Run: r, Presence: p, State: stateOf(r, p)})
+		out = append(out, Candidate{Run: r, Presence: p, State: stateOf(r, p, d.Clock.Now())})
 	}
 	return out, nil
 }
 
-func stateOf(r RunRecord, p Presence) string {
+func stateOf(r RunRecord, p Presence, now time.Time) string {
 	switch {
 	case r.Verdict != RunRunning:
 		return "finished"
-	case p.Busy:
+	case p.Busy, now.Sub(r.StartedAt) < ReapGrace: // a young row may be about to take its lock
 		return "running"
 	}
 	return "crashed"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 )
 
 var (
@@ -34,10 +35,14 @@ func ownedOf(rec RunRecord) Owned {
 	return Owned{Session: rec.Session, Branch: BranchOf(rec.Session), Dir: DirOf(rec.Session), Tip: tip}
 }
 
+// ReapGrace is how old a row must be before a free lock proves its process
+// died: a run takes its lock a moment after its row is written.
+const ReapGrace = 10 * time.Second
+
 // Reap completes a run that is recorded as running but whose lock is free (its
 // process died) as interrupted. Any other run is returned unchanged.
 func Reap(ctx context.Context, d FinishDeps, rec RunRecord) (RunRecord, error) {
-	if rec.Verdict != RunRunning {
+	if rec.Verdict != RunRunning || d.Clock.Now().Sub(rec.StartedAt) < ReapGrace {
 		return rec, nil
 	}
 	if p, err := d.Workspace.Inspect(ctx, ownedOf(rec)); err == nil && p.Busy {

@@ -29,7 +29,7 @@ Without `--yes`, one line per run without a verdict:
 `<task>` is `-` for a run without a task. `<state>` is `finished` (ended,
 waiting for your verdict), `crashed` (recorded as running but its process is
 gone, it is completed as `interrupted` first) or `running` (its lock is held:
-it is alive and is never touched, even with `--yes`).
+it is alive and is never touched, even with `--yes`; a row younger than 10 seconds is also listed as `running`, because its process may be about to take the lock).
 
 With `--yes`, one line per run: `removed <session>`, `skipped (running)
 <session>` or `failed <session>: <reason>`. A failure (for example a branch that

@@ -160,7 +160,9 @@ Only a container closes that.
 A run holds an exclusive `flock` on `worktrees/<session>.lock` for its whole
 life; the lock disappears with the process, even when it is killed. "Running"
 is decided by that lock, not by a flag. A row recorded as running whose lock is
-free is a crashed run: `finish` and `clean` complete it as `interrupted` first.
+free is a crashed run: `finish` and `clean` complete it as `interrupted` first,
+once the row is more than 10 seconds old (a run takes its lock a moment after
+its row is written; a younger row is listed as `running` and left alone).
 `clean` never touches a run whose lock is held, even with `--yes`.
 
 ## Edge cases

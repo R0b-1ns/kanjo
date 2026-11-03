@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/R0b-1ns/kanjo/internal/core"
 	"github.com/R0b-1ns/kanjo/internal/kanjotest"
@@ -54,6 +55,16 @@ func TestCandidateStates(t *testing.T) {
 	r.j.Created(ctx, testSession)
 	if cs := candidates(t, r); len(cs) != 1 || cs[0].State != "running" || !cs[0].Presence.Busy {
 		t.Fatalf("running: %+v", cs)
+	}
+}
+
+func TestAYoungRunWithoutALockIsListedAsRunning(t *testing.T) {
+	r := crashed(t)
+	d := r.finishDeps()
+	d.Clock = kanjotest.FixedClock{T: testNow.Add(time.Second)}
+	cs, err := core.Candidates(context.Background(), d)
+	if err != nil || len(cs) != 1 || cs[0].State != "running" {
+		t.Fatalf("cs %+v err %v", cs, err)
 	}
 }
 

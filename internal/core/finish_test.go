@@ -212,3 +212,23 @@ func TestReapLeavesFinishedRunsAlone(t *testing.T) {
 		t.Fatalf("got %+v err %v", got, err)
 	}
 }
+
+func TestAYoungRowWithoutALockIsNotReapedYet(t *testing.T) {
+	r := crashed(t)
+	d := r.finishDeps()
+	d.Clock = kanjotest.FixedClock{T: testNow.Add(2 * time.Second)} // a run that began a moment ago may be about to take its lock
+	if _, err := core.Finish(context.Background(), d, testSession, core.Accepted); !errors.Is(err, core.ErrStillRunning) {
+		t.Fatalf("err = %v", err)
+	}
+	if rec := r.record(); rec.Verdict != core.RunRunning || rec.Lead != nil || r.ws.Removals() != 0 {
+		t.Fatalf("record = %+v", rec)
+	}
+	res := core.Clean(context.Background(), d, candidates(t, r))
+	if len(res) != 1 || !res[0].Skipped {
+		t.Fatalf("clean: %+v", res)
+	}
+	d.Clock = kanjotest.FixedClock{T: testNow.Add(core.ReapGrace + time.Second)}
+	if _, err := core.Finish(context.Background(), d, testSession, core.Accepted); err != nil {
+		t.Fatalf("after the grace period: %v", err)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/R0b-1ns/kanjo/internal/core"
 	"github.com/R0b-1ns/kanjo/internal/sysclock"
 )
 
@@ -313,6 +314,7 @@ func TestIntegrationCleanRemovesACrashedRun(t *testing.T) {
 	defer syscall.Kill(-agentPid, syscall.SIGKILL) // the orphaned agent
 	cmd.Process.Signal(syscall.SIGKILL)
 	cmd.Wait()
+	time.Sleep(core.ReapGrace) // a row younger than this may be about to take its lock: it is not touched yet
 	_, listing, _ := e.kanjo("clean")
 	if !strings.Contains(listing, " crashed ") {
 		t.Fatalf("listing:\n%s", listing)
