@@ -31,8 +31,12 @@ func NewMemStore() *MemStore {
 func (m *MemStore) Merge(_ context.Context, b core.Batch, log core.SnapshotLog) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	incoming := map[slot][]core.UsageRow{}
 	for _, r := range b.Rows {
-		m.mergeRow(r)
+		incoming[slotOf(r.Key)] = append(incoming[slotOf(r.Key)], r)
+	}
+	for sl, rows := range incoming {
+		m.mergeSlot(sl, rows)
 	}
 	for _, s := range b.Sessions {
 		m.sessions[sessionKey{s.Source, s.Session}] = s
@@ -41,25 +45,33 @@ func (m *MemStore) Merge(_ context.Context, b core.Batch, log core.SnapshotLog) 
 	return nil
 }
 
-// mergeRow keeps what is saved when it counts more messages than r, so a
-// partly purged source never shrinks history; otherwise r replaces the saved
-// rows of its slot.
-func (m *MemStore) mergeRow(r core.UsageRow) {
-	for k, saved := range m.rows {
-		if slotOf(k) == slotOf(r.Key) && saved.Messages > r.Messages {
-			return
+// mergeSlot keeps what is saved when it counts more messages than the incoming
+// rows, so a partly purged source never shrinks history; otherwise the
+// incoming rows replace the saved rows of the slot.
+func (m *MemStore) mergeSlot(sl slot, rows []core.UsageRow) {
+	var saved, incoming int64
+	for k, r := range m.rows {
+		if slotOf(k) == sl {
+			saved += r.Messages
 		}
 	}
+	for _, r := range rows {
+		incoming += r.Messages
+	}
+	if saved > incoming {
+		return
+	}
 	for k := range m.rows {
-		if slotOf(k) == slotOf(r.Key) {
+		if slotOf(k) == sl {
 			delete(m.rows, k)
 		}
 	}
-	m.rows[r.Key] = copyRow(r)
+	for _, r := range rows {
+		m.rows[r.Key] = copyRow(r)
+	}
 }
 
-// slot is a key without its task: a new task label for the same day and model
-// replaces the old row.
+// slot is a key without its task: the rows of one slot are replaced together.
 type slot struct {
 	source, session, day, model string
 	longContext                 bool

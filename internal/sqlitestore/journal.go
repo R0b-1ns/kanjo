@@ -12,41 +12,23 @@ import (
 const markerCols = "id, at, kind, session, task"
 
 // Update implements core.Journal. The scope's events are read and the new one
-// appended inside one BEGIN IMMEDIATE transaction, so concurrent callers
-// (other kanjo processes included) are serialized by the database lock.
-func (s *Store) Update(ctx context.Context, session string, fn func([]core.Marker, int) (*core.Marker, error)) (err error) {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		return err
-	}
-	defer func() {
+// appended in one immediate transaction.
+func (s *Store) Update(ctx context.Context, session string, fn func([]core.Marker, int) (*core.Marker, error)) error {
+	return s.immediate(ctx, func(conn *sql.Conn) error {
+		scope, err := queryMarkers(ctx, conn, "WHERE session = ? ORDER BY at, id", session)
 		if err != nil {
-			conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
-		}
-	}()
-	scope, err := queryMarkers(ctx, conn, "WHERE session = ? ORDER BY at, id", session)
-	if err != nil {
-		return err
-	}
-	var total int
-	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM markers").Scan(&total); err != nil {
-		return err
-	}
-	m, err := fn(scope, total)
-	if err != nil {
-		return err
-	}
-	if m != nil {
-		if err := appendMarker(ctx, conn, *m); err != nil {
 			return err
 		}
-	}
-	_, err = conn.ExecContext(ctx, "COMMIT")
-	return err
+		var total int
+		if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM markers").Scan(&total); err != nil {
+			return err
+		}
+		m, err := fn(scope, total)
+		if err != nil || m == nil {
+			return err
+		}
+		return appendMarker(ctx, conn, *m)
+	})
 }
 
 func appendMarker(ctx context.Context, conn *sql.Conn, m core.Marker) error {

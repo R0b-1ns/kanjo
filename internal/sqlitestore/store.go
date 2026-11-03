@@ -55,7 +55,7 @@ const addMarked = "ALTER TABLE usage ADD COLUMN marked INTEGER NOT NULL DEFAULT 
 const slotMatch = "source = ? AND session = ? AND day = ? AND model = ? AND long_context = ?"
 
 const usageCols = `source, session, day, task, model, long_context, messages, input, output,
-  reasoning, cache_write_5m, cache_write_1h, cache_read, cost_reported_usd`
+  reasoning, cache_write_5m, cache_write_1h, cache_read, cost_reported_usd, marked`
 
 // Store is a core.Store backed by <dir>/kanjo.db.
 type Store struct {
@@ -212,52 +212,106 @@ func migrate(db *sql.DB) error {
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-type stmt struct {
-	query string
-	args  []any
+// immediate runs fn on one connection inside a BEGIN IMMEDIATE transaction:
+// the write lock is taken before anything is read, so concurrent writers
+// (other kanjo processes included) are serialized. An error rolls back.
+func (s *Store) immediate(ctx context.Context, fn func(conn *sql.Conn) error) (err error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+		}
+	}()
+	if err = fn(conn); err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "COMMIT")
+	return err
 }
 
 // Merge implements core.Store.
 func (s *Store) Merge(ctx context.Context, b core.Batch, log core.SnapshotLog) error {
-	var stmts []stmt
-	for _, r := range b.Rows {
-		slot := []any{r.Source, r.Session, r.Day, r.Model, r.LongContext}
-		// Saved rows of the slot with at most as many messages are superseded;
-		// a saved row with more survives and the incoming row is dropped.
-		stmts = append(stmts,
-			stmt{"DELETE FROM usage WHERE " + slotMatch + " AND messages <= ?", append(slot, r.Messages)},
-			stmt{"INSERT OR REPLACE INTO usage(" + usageCols + ") SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM usage WHERE " + slotMatch + ")",
-				append([]any{r.Source, r.Session, r.Day, r.Task, r.Model, r.LongContext, r.Messages, r.Input, r.Output,
-					r.Reasoning, r.CacheWrite5m, r.CacheWrite1h, r.CacheRead, r.CostReportedUSD}, slot...)})
-	}
-	for _, ses := range b.Sessions {
-		stmts = append(stmts, stmt{"INSERT OR REPLACE INTO sessions VALUES(?,?,?,?)",
-			[]any{ses.Source, ses.Session, ses.TaskSource, ses.LabelsSeen}})
-	}
-	stmts = append(stmts, stmt{"INSERT INTO snapshots VALUES(?,?,?,?)",
-		[]any{log.At.UTC().Format(time.RFC3339), log.Sessions, log.Rows, log.Skipped}})
-	return s.inTx(ctx, stmts)
+	return s.immediate(ctx, func(conn *sql.Conn) error {
+		for _, g := range groupBySlot(b.Rows) {
+			if err := mergeSlot(ctx, conn, g); err != nil {
+				return err
+			}
+		}
+		for _, ses := range b.Sessions {
+			if _, err := conn.ExecContext(ctx, "INSERT OR REPLACE INTO sessions VALUES(?,?,?,?)",
+				ses.Source, ses.Session, ses.TaskSource, ses.LabelsSeen); err != nil {
+				return err
+			}
+		}
+		_, err := conn.ExecContext(ctx, "INSERT INTO snapshots VALUES(?,?,?,?)",
+			log.At.UTC().Format(time.RFC3339), log.Sessions, log.Rows, log.Skipped)
+		return err
+	})
 }
 
-// inTx runs the statements in one transaction: all or nothing.
-func (s *Store) inTx(ctx context.Context, stmts []stmt) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
+// slotRows are the incoming rows of one slot.
+type slotRows struct {
+	args  []any // source, session, day, model, long_context
+	rows  []core.UsageRow
+	total int64
+}
+
+// groupBySlot groups rows by slot, in order of first appearance.
+func groupBySlot(rows []core.UsageRow) []*slotRows {
+	var out []*slotRows
+	byKey := map[[5]any]*slotRows{}
+	for _, r := range rows {
+		k := [5]any{r.Source, r.Session, r.Day, r.Model, r.LongContext}
+		g := byKey[k]
+		if g == nil {
+			g = &slotRows{args: k[:]}
+			byKey[k] = g
+			out = append(out, g)
+		}
+		g.rows = append(g.rows, r)
+		g.total += r.Messages
+	}
+	return out
+}
+
+// mergeSlot replaces the stored rows of a slot by the incoming ones, unless
+// the stored ones count more messages in total.
+func mergeSlot(ctx context.Context, conn *sql.Conn, g *slotRows) error {
+	var stored int64
+	if err := conn.QueryRowContext(ctx, "SELECT COALESCE(SUM(messages), 0) FROM usage WHERE "+slotMatch, g.args...).Scan(&stored); err != nil {
 		return err
 	}
-	defer tx.Rollback() // no-op after Commit
-	for _, st := range stmts {
-		if _, err := tx.ExecContext(ctx, st.query, st.args...); err != nil {
+	if stored > g.total {
+		return nil
+	}
+	if _, err := conn.ExecContext(ctx, "DELETE FROM usage WHERE "+slotMatch, g.args...); err != nil {
+		return err
+	}
+	for _, r := range g.rows {
+		if _, err := conn.ExecContext(ctx, "INSERT INTO usage("+usageCols+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+			r.Source, r.Session, r.Day, r.Task, r.Model, r.LongContext, r.Messages, r.Input, r.Output,
+			r.Reasoning, r.CacheWrite5m, r.CacheWrite1h, r.CacheRead, r.CostReportedUSD, r.Marked); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // Rows implements core.Store. Every stored row is validated again, so a
 // tampered database is an error rather than bad data.
 func (s *Store) Rows(ctx context.Context) ([]core.UsageRow, error) {
-	rs, err := s.db.QueryContext(ctx, "SELECT "+usageCols+" FROM usage ORDER BY source, session, day, task, model, long_context")
+	cols := usageCols
+	if s.version < 2 {
+		cols = strings.TrimSuffix(usageCols, "marked") + "0"
+	}
+	rs, err := s.db.QueryContext(ctx, "SELECT "+cols+" FROM usage ORDER BY source, session, day, task, model, long_context")
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +321,7 @@ func (s *Store) Rows(ctx context.Context) ([]core.UsageRow, error) {
 		var r core.UsageRow
 		var cost sql.NullFloat64
 		if err := rs.Scan(&r.Source, &r.Session, &r.Day, &r.Task, &r.Model, &r.LongContext, &r.Messages,
-			&r.Input, &r.Output, &r.Reasoning, &r.CacheWrite5m, &r.CacheWrite1h, &r.CacheRead, &cost); err != nil {
+			&r.Input, &r.Output, &r.Reasoning, &r.CacheWrite5m, &r.CacheWrite1h, &r.CacheRead, &cost, &r.Marked); err != nil {
 			return nil, err
 		}
 		if cost.Valid {

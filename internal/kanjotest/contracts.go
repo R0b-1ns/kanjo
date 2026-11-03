@@ -18,6 +18,12 @@ func row(session, day, task, model string, in int64, cost *float64) core.UsageRo
 	}
 }
 
+// msgs sets the message and marker counts of a row.
+func msgs(r core.UsageRow, messages, marked int64) core.UsageRow {
+	r.Messages, r.Marked = messages, marked
+	return r
+}
+
 func sess(session string) core.SessionInfo {
 	return core.SessionInfo{Source: "claude", Session: session, TaskSource: "none"}
 }
@@ -132,6 +138,44 @@ var storeCases = []struct {
 		free, paid := row("s-1", "2026-11-03", "ABC-1", "free", 1, nil), row("s-1", "2026-11-03", "ABC-1", "paid", 1, &c)
 		mustReplace(t, s, batch([]core.UsageRow{free, paid}, "s-1"))
 		wantRows(t, s, []core.UsageRow{free, paid})
+	}},
+	{"two tasks in one slot are both kept", func(t *testing.T, s core.Store) {
+		a, b := msgs(row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), 3, 3), msgs(row("s-1", "2026-11-03", "XYZ-2", "m", 6, nil), 2, 0)
+		mustReplace(t, s, batch([]core.UsageRow{a, b}, "s-1"))
+		wantRows(t, s, []core.UsageRow{a, b})
+	}},
+	{"a slot is replaced as a set when the incoming total is equal", func(t *testing.T, s core.Store) {
+		mustReplace(t, s, batch([]core.UsageRow{msgs(row("s-1", "2026-11-03", "ABC-1", "m", 9, nil), 5, 0)}, "s-1"))
+		a, b := msgs(row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), 3, 3), msgs(row("s-1", "2026-11-03", "ABC-2", "m", 4, nil), 2, 2)
+		mustReplace(t, s, batch([]core.UsageRow{a, b}, "s-1"))
+		wantRows(t, s, []core.UsageRow{a, b})
+	}},
+	{"a slot is replaced by fewer tasks when the incoming total is larger", func(t *testing.T, s core.Store) {
+		a, b := msgs(row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), 3, 0), msgs(row("s-1", "2026-11-03", "ABC-2", "m", 4, nil), 2, 0)
+		mustReplace(t, s, batch([]core.UsageRow{a, b}, "s-1"))
+		one := msgs(row("s-1", "2026-11-03", "ABC-3", "m", 9, nil), 6, 6)
+		mustReplace(t, s, batch([]core.UsageRow{one}, "s-1"))
+		wantRows(t, s, []core.UsageRow{one})
+	}},
+	{"a smaller incoming slot never shrinks saved usage, whatever its tasks", func(t *testing.T, s core.Store) {
+		a, b := msgs(row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), 3, 0), msgs(row("s-1", "2026-11-03", "ABC-2", "m", 4, nil), 2, 0)
+		mustReplace(t, s, batch([]core.UsageRow{a, b}, "s-1"))
+		in := []core.UsageRow{msgs(row("s-1", "2026-11-03", "ABC-3", "m", 1, nil), 2, 2), msgs(row("s-1", "2026-11-03", "ABC-4", "m", 1, nil), 2, 2)}
+		mustReplace(t, s, batch(in, "s-1"))
+		wantRows(t, s, []core.UsageRow{a, b})
+	}},
+	{"slots are independent", func(t *testing.T, s core.Store) {
+		other := msgs(row("s-1", "2026-11-03", "ABC-1", "other", 1, nil), 9, 0)
+		a := msgs(row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), 3, 0)
+		mustReplace(t, s, batch([]core.UsageRow{other, a}, "s-1"))
+		small := msgs(row("s-1", "2026-11-03", "ABC-2", "m", 5, nil), 3, 3)
+		mustReplace(t, s, batch([]core.UsageRow{small}, "s-1"))
+		wantRows(t, s, []core.UsageRow{other, small})
+	}},
+	{"marked round-trips", func(t *testing.T, s core.Store) {
+		want := []core.UsageRow{msgs(row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), 4, 3)}
+		mustReplace(t, s, batch(want, "s-1"))
+		wantRows(t, s, want)
 	}},
 	{"odd but valid labels round-trip", func(t *testing.T, s core.Store) {
 		want := []core.UsageRow{row("s-1", "2026-11-03", "a.b-c/d", "m", 1, nil)}
