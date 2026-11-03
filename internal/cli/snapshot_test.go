@@ -168,3 +168,17 @@ func rawExec(t *testing.T, dbPath, stmt string) {
 		t.Fatal(err)
 	}
 }
+
+func (w *world) markers() []core.Marker {
+	w.t.Helper()
+	s, err := sqlitestore.OpenReadOnly(w.data)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	defer s.Close()
+	ms, err := s.Markers(context.Background())
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return ms
+}
