@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,6 +32,10 @@ var (
 	ErrNotOurs = errors.New("not a worktree this tool created")
 	// ErrDiffTooLarge means the diff is over the byte cap.
 	ErrDiffTooLarge = errors.New("the diff is over the size cap")
+	// ErrArtifactExists means that file of the run was already created.
+	ErrArtifactExists = errors.New("that run file already exists")
+	// ErrBadArtifact means the session id or the file name is not allowed.
+	ErrBadArtifact = errors.New("invalid run file name")
 	// ErrBoxClosed means the box was closed and runs nothing any more.
 	ErrBoxClosed = errors.New("the box is closed")
 )
@@ -149,4 +155,43 @@ type Owned struct {
 // Presence says what exists of an Owned workspace.
 type Presence struct {
 	DirExists, BranchExists, Busy, TipMatches bool
+}
+
+// ArtifactName is one of the closed set of files of a run.
+type ArtifactName string
+
+const (
+	ArtReportJSON ArtifactName = "report.json"
+	ArtReportTXT  ArtifactName = "report.txt"
+	ArtPatch      ArtifactName = "changes.patch"
+	ArtAgentLog   ArtifactName = "agent.log"
+	ArtSetupLog   ArtifactName = "setup.log"
+	ArtTestLog    ArtifactName = "test.log"
+
+	// MaxCheckLogs is how many check-N.log files a run may have.
+	MaxCheckLogs = 32
+)
+
+// ArtCheckLog is the log of the nth --check, numbered from 1.
+func ArtCheckLog(n int) ArtifactName { return ArtifactName("check-" + strconv.Itoa(n) + ".log") }
+
+// Valid reports whether n is in the closed set.
+func (n ArtifactName) Valid() bool {
+	switch n {
+	case ArtReportJSON, ArtReportTXT, ArtPatch, ArtAgentLog, ArtSetupLog, ArtTestLog:
+		return true
+	}
+	num, ok := strings.CutPrefix(string(n), "check-")
+	num, ok2 := strings.CutSuffix(num, ".log")
+	i, err := strconv.Atoi(num)
+	return ok && ok2 && err == nil && i >= 1 && i <= MaxCheckLogs && strconv.Itoa(i) == num
+}
+
+// Artifacts creates the files of one run (runs/<session>/).
+type Artifacts interface {
+	// Create makes a new file for streaming; ErrArtifactExists if the name was
+	// used, ErrBadArtifact for a session id or name that is not allowed.
+	Create(ctx context.Context, session string, name ArtifactName) (io.WriteCloser, error)
+	// Write makes a new file with data, whole or not at all.
+	Write(ctx context.Context, session string, name ArtifactName, data []byte) error
 }
