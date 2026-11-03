@@ -111,14 +111,14 @@ func (w *Workspace) takeLock(session string) (f *os.File, fresh bool, err error)
 	_, statErr := os.Lstat(path)
 	f, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return nil, false, err
+		return nil, fresh, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, false, core.ErrExists
+			err = core.ErrExists
 		}
-		return nil, false, err
+		return nil, fresh, err
 	}
 	return f, statErr != nil, nil
 }
@@ -360,23 +360,23 @@ func worktreeBranches(porcelain string) map[string]string {
 }
 
 // busy tries the run lock without waiting; it creates nothing.
-func (w *Workspace) busy(session string) (bool, error) {
+func (w *Workspace) busy(session string) (busy bool, err error) {
 	f, err := os.OpenFile(w.lockOf(session), os.O_RDWR|syscall.O_NOFOLLOW, 0)
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return busy, nil
 	}
 	if err != nil {
-		return false, err
+		return busy, err
 	}
 	defer f.Close()
 	switch err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); {
 	case errors.Is(err, syscall.EWOULDBLOCK):
 		return true, nil
 	case err != nil:
-		return false, err
+		return busy, err
 	}
 	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	return false, nil
+	return busy, nil
 }
 
 // Inspect implements core.Workspace.

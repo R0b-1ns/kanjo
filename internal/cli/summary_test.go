@@ -67,6 +67,17 @@ func TestSummaryPrintsTheTotals(t *testing.T) {
 	}
 }
 
+func TestSummaryListsOnlyVerdictsThatOccurred(t *testing.T) {
+	w := newWorld(t)
+	w.seedRuns()
+	out := w.must("summary")
+	for _, absent := range []string{"modified", "abandoned", "quota-exhausted", "interrupted", "check-stray-files"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("summary lists %q although no run had it:\n%s", absent, out)
+		}
+	}
+}
+
 func TestSummaryBeforeAnyRunCreatesNothing(t *testing.T) {
 	w := newWorld(t)
 	if code, out, _ := w.run("summary"); code != 0 || out != "no runs\n" {

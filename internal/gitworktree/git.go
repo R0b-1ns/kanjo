@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unicode"
 )
 
 // hardening is put before every git command.
@@ -73,7 +74,7 @@ func exitCode(err error) int {
 
 func oneLine(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
@@ -88,9 +89,7 @@ type limited struct {
 
 func (l *limited) Write(p []byte) (int, error) {
 	n := len(p)
-	if len(p) > l.left {
-		p = p[:l.left]
-	}
+	p = p[:min(n, l.left)]
 	l.left -= len(p)
 	l.w.Write(p)
 	return n, nil

@@ -594,3 +594,103 @@ func TestIntegrationMainRepositoryIsUntouched(t *testing.T) {
 		t.Fatal("a file of the main checkout changed")
 	}
 }
+
+func TestIntegrationCreateRefusesAnInvalidSessionOrCommit(t *testing.T) {
+	r := newRepo(t, true)
+	commit, _ := r.ws.Resolve(context.Background(), "HEAD")
+	for session, c := range map[string]string{"../x": commit, "ses_ok": "nothex", "ses_ok2": strings.ToUpper(commit)} {
+		if _, err := r.ws.Create(context.Background(), session, c); err == nil {
+			t.Errorf("Create(%q, %q) succeeded", session, c)
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(r.data, "worktrees")); len(entries) != 0 {
+		t.Fatalf("something was created: %v", entries)
+	}
+}
+
+func TestIntegrationCreateInAMissingDataFolderFails(t *testing.T) {
+	r := newRepo(t, true)
+	ws := gitworktree.New(r.dir, filepath.Join(t.TempDir(), "no", "such", "data"))
+	commit, _ := ws.Resolve(context.Background(), "HEAD")
+	if _, err := ws.Create(context.Background(), "ses_x", commit); err == nil {
+		t.Fatal("Create succeeded without a data folder")
+	}
+}
+
+func TestIntegrationAFailedCreateLeavesNoNewLockFileButKeepsAnOldOne(t *testing.T) {
+	r := newRepo(t, true)
+	commit, _ := r.ws.Resolve(context.Background(), "HEAD")
+	lock := func(s string) string { return filepath.Join(r.data, "worktrees", s+".lock") }
+	writeFile(t, filepath.Join(r.data, "worktrees", "ses_new", "x"), "x") // folder in the way, no lock file yet
+	if _, err := r.ws.Create(context.Background(), "ses_new", commit); !errors.Is(err, core.ErrExists) {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(lock("ses_new")); err == nil {
+		t.Fatal("a failed Create left a lock file behind")
+	}
+	writeFile(t, lock("ses_old"), "")
+	writeFile(t, filepath.Join(r.data, "worktrees", "ses_old", "x"), "x")
+	if _, err := r.ws.Create(context.Background(), "ses_old", commit); !errors.Is(err, core.ErrExists) {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(lock("ses_old")); err != nil {
+		t.Fatal("a lock file that existed before was removed")
+	}
+}
+
+func TestIntegrationStateAndDiffRefuseAForgedWorkdir(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_forged")
+	st := r.state(w)
+	ctx := context.Background()
+	forged := []core.Workdir{
+		{Session: "../x", Dir: w.Dir, Branch: w.Branch, Base: w.Base},
+		{Session: w.Session, Dir: r.dir, Branch: w.Branch, Base: w.Base},
+		{Session: w.Session, Dir: w.Dir, Branch: "main", Base: w.Base},
+	}
+	for _, f := range forged {
+		if _, err := r.ws.State(ctx, f); !errors.Is(err, core.ErrNotOurs) {
+			t.Errorf("State(%+v) = %v", f, err)
+		}
+		if err := r.ws.Diff(ctx, f, st, io.Discard, 1<<20); !errors.Is(err, core.ErrNotOurs) {
+			t.Errorf("Diff(%+v) = %v", f, err)
+		}
+	}
+	bad := w
+	bad.Base = "nothex"
+	if err := r.ws.Diff(ctx, bad, st, io.Discard, 1<<20); err == nil {
+		t.Error("a bad base id reached git")
+	}
+	if err := r.ws.Diff(ctx, w, core.State{Tree: "nothex"}, io.Discard, 1<<20); err == nil {
+		t.Error("a bad tree id reached git")
+	}
+}
+
+func TestIntegrationDiffCapIsInclusive(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_cap2")
+	writeFile(t, filepath.Join(w.Dir, "new.txt"), "fresh\n")
+	st := r.state(w)
+	var full bytes.Buffer
+	if err := r.ws.Diff(context.Background(), w, st, &full, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	n := int64(full.Len())
+	if err := r.ws.Diff(context.Background(), w, st, io.Discard, n); err != nil {
+		t.Fatalf("a diff of exactly the cap: %v", err)
+	}
+	if err := r.ws.Diff(context.Background(), w, st, io.Discard, n-1); !errors.Is(err, core.ErrDiffTooLarge) {
+		t.Fatalf("one byte over the cap: %v", err)
+	}
+}
+
+func TestIntegrationRemoveReportsABranchItCannotDelete(t *testing.T) {
+	r := newRepo(t, true)
+	w := r.create("ses_locked")
+	r.ws.Release(w)
+	o := owned(r, w)
+	writeFile(t, filepath.Join(r.dir, ".git", "refs", "heads", "delegate", "ses_locked.lock"), "")
+	if err := r.ws.Remove(context.Background(), o); err == nil {
+		t.Fatal("Remove hid the failure to delete the branch")
+	}
+}
