@@ -1,6 +1,6 @@
 # Security
 
-What this slice defends against, and the test that proves each point. Test
+What kanjo defends against, and the test that proves each point. Test
 names are Go tests in the package shown.
 
 Transcripts, config files, price files and server answers are **data**, never
@@ -36,6 +36,19 @@ instructions. Nothing from them is executed.
 | Huge or endless download | Size caps (1 MiB API, 64 KiB checksums, 200 MiB binary), request timeout | `selfupdate.TestOversizedDownloadsAreRefused`, `selfupdate.TestExactLimitIsAccepted`, `selfupdate.TestClientDefaults` |
 | Half-written binary | Temporary file next to the target, renamed only after the checksum matches, removed on any failure | `selfupdate.TestUnwritableDirectoryFailsCleanly`, `selfupdate.TestHashMismatchKeepsOldBinary` |
 | Server text in error messages | Never echoed | `selfupdate.TestBadServerAnswers`, `cli.TestSelfUpdateFailureExits1` |
+| The page is reachable from the network | The listen address is fixed to `127.0.0.1` (there is no option); `Serve` refuses any other listener | `web.TestListenLoopbackIsLoopbackOnly` (also dials this machine's LAN address), `web.TestServeRefusesANonLoopbackListener`, `cli.TestServeAnswersOnlyOnLoopbackWithItsOwnHost` |
+| DNS rebinding (a foreign name resolving to 127.0.0.1) | `Host` must be exactly `127.0.0.1:<port>` or `localhost:<port>`, otherwise 403 | `web.TestHostMustBeLoopbackWithThePort` |
+| Writes or side effects through the page | Only `GET` and `HEAD`; every handler is read-only | `web.TestOnlyGetAndHead`, `cli.TestServeLogsNothingAndCreatesNothing` |
+| Cross-origin reads, framing, sniffing | No CORS header; strict CSP (`default-src 'none'`), `nosniff`, `no-referrer`, `Cross-Origin-Resource-Policy: same-origin`, `no-store` on every answer, errors included | `web.TestSecurityHeadersOnEveryAnswer` |
+| Script injection through a session id, task, model or project name | JSON is encoded (markup stays escaped); the page uses `textContent` and SVG attributes only; no inline script or style, no external reference | `web.TestHostileValuesStayData`, `web.TestPageNeverBuildsMarkupFromData`, `web.TestPageHasNoInlineScriptOrStyle`, `web.TestPageHasNoExternalReferences` |
+| Slow, huge or odd requests | Header, read, write and idle timeouts, 8 KiB headers, 1024-byte query cap, strict query parameters (each once, validated) | `web.TestServerLimits`, `web.TestLongQueryIs414`, `web.TestBadParametersAre400` |
+| File listing, path or error-text leaks | Four fixed routes served from embedded files (no file server); loader errors are never echoed; project names are folder base names | `web.TestUnknownPathsAre404`, `web.TestLoaderErrorHidesTheDetail`, `cli.TestCanaryNeverInPageOrJSON`, `projects.TestFailureCarriesNoPath` |
+| Port clash hides the real server | A busy port is an error, never a fallback; bad ports are usage errors | `web.TestListenLoopbackRefusesABusyPort`, `cli.TestServeBusyPortFailsWithoutFallback`, `cli.TestServeBadPort` |
+| Another project's database is hostile (corrupt, linked, tampered values) | Opened read-only, never created, links refused, schema untrusted, values re-validated; the project is named as unreadable and the others still reported | `projects.TestCorruptDatabaseIsReportedAndOthersStillRead`, `projects.TestSymlinkedDatabaseIsRefusedNotFollowed`, `projects.TestHostileRowsInAnotherDatabaseMakeTheProjectFail`, `projects.TestReadNeverCreatesOrChangesAnything`, `cli.TestUsageAllWithABrokenProjectStillPrintsTheRest`, `cli.TestScopeAllNamesAnUnreadableProject` |
+| A cloned repository chooses which projects are read, or the port or age limit | `projects`, `serve.port` and `prices.max_age_days` are user-config only; a project's own `kanjo.toml` is never read | `config.TestRepoConfigMayNotSetProjectsServeOrPrices`, `cli.TestRepoConfigProjectsAreRefusedByUsageAll` |
+| Page and CLI disagree on totals | Both call `core.Aggregate` | `cli.TestPageAndCLIGiveTheSameTotalsForTheProject`, `cli.TestPageAndCLIGiveTheSameTotalsForAllProjects` |
+| An unpriced model hidden as 0 on the page | `usd` is `null` and the group is labelled "no price"; the total ignores it | `web.TestUnpricedModelIsNullAndDoesNotChangeTheTotal` |
+| Old prices go unnoticed | `prices check` warns strictly above `prices.max_age_days`, lists unpriced models, never downloads | `cli.TestPricesCheckAtThirtyDaysDoesNotWarn`, `cli.TestPricesCheckAtThirtyOneDaysWarns`, `cli.TestPricesCheckListsUnpricedModelsOfTheData` |
 | Secrets in logs | kanjo never reads credentials and never logs content; errors name files, lines or counts only | covered by the canary tests above |
 
 ## Residual risks
@@ -46,11 +59,12 @@ instructions. Nothing from them is executed.
 - A task label chosen by the user's own `task.pattern` is stored as is; do not use a pattern that can match secrets.
 - Transcript files are opened by path after being listed; a file swapped for a symbolic link in between could be read. Only usage numbers are extracted from it.
 - `self-update` trusts GitHub's TLS and the repository's release assets. The attestation proves origin but is checked by you, not by the command ([release.md](release.md)).
+- `kanjo serve` has no authentication: any process of any user on the same machine can read the page and `/api/data` (counts, model names, task labels, project folder names). Do not run it on a shared host.
+- A browser tab on another site cannot read the page (no CORS, `Host` check), but a local program can; the data is the same as `kanjo usage` prints.
 - Commands run with your user rights. There is no sandbox yet.
 
-## Not in this slice
+## Not yet built
 
-Web server (planned: 127.0.0.1 only, read only), delegation to other models,
-container isolation, secret handling for agents, spending caps and agent-return
+Delegation to other models, container isolation, secret handling for agents, spending caps and agent-return
 validation. The threats for those are in [spec.md](spec.md) sections 10 and 12
 and will be handled, with tests, in their own slices.

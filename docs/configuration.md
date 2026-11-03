@@ -71,6 +71,19 @@ User file (a repository `kanjo.toml` may not set `task.pattern`), a custom label
 pattern = '\bTASK-[0-9]+\b'
 ```
 
+Read several projects, serve the page on another port and warn after 14 days
+(user file only; `projects` is a top-level key and goes before any `[table]`):
+
+```toml
+projects = ["/home/me/work/app-a", "/home/me/work/app-b"]
+
+[serve]
+port = 9000
+
+[prices]
+max_age_days = 14
+```
+
 Disable the label heuristic (every session is filed under `-` unless the task
 map names it):
 
@@ -96,4 +109,5 @@ pattern = '\b(?:ABC|XYZ)-[0-9]+\b'
 
 - `--data-dir` also moves the default task map (`<data_dir>/claude-tasks.tsv`).
 - Claude Code names a project folder after its path with every character other than a letter or digit replaced by `-` (`/a/.b/c_d` becomes `-a--b-c-d`).
+- `projects` is documented in [projects.md](projects.md); `serve.port` in [commands/serve.md](commands/serve.md); `prices.max_age_days` in [commands/prices-check.md](commands/prices-check.md).
 - Environment-variable and per-role routing configuration come with later slices.

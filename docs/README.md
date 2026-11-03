@@ -1,8 +1,9 @@
 # kanjo documentation
 
-kanjo measures AI consumption. This slice reads Claude Code transcripts, saves
+kanjo measures AI consumption. It reads Claude Code transcripts, saves
 usage in a local SQLite database, estimates cost at API list prices, and
-reports tokens and dollars per task, model, day or session. Everything stays
+reports tokens and dollars per task, model, day or session, in the terminal or
+on a read-only local page, for one project or several. Everything stays
 on the machine; only counts, model names, identifiers and dates are stored.
 
 Founding document: [spec.md](spec.md) (what the finished tool must do). The
@@ -14,6 +15,9 @@ pages below describe what exists now.
 |---|---|
 | [commands/snapshot.md](commands/snapshot.md) | `kanjo snapshot`: read transcripts into the data folder |
 | [commands/usage.md](commands/usage.md) | `kanjo usage`: report tokens and estimated cost |
+| [commands/serve.md](commands/serve.md) | `kanjo serve`: read-only report page and `/api/data` on 127.0.0.1 |
+| [commands/prices-check.md](commands/prices-check.md) | `kanjo prices check`: age and coverage of the price file |
+| [projects.md](projects.md) | Several projects: the `projects` key, `usage --all`, the page scope |
 | [commands/self-update.md](commands/self-update.md) | `kanjo self-update`: install the latest release |
 | [commands/version.md](commands/version.md) | `kanjo version` |
 | [configuration.md](configuration.md) | Config files, layers, every key, flags |
@@ -32,6 +36,9 @@ kanjo snapshot                       # read ~/.claude/projects into ./.ai-usage/
 kanjo usage                          # table by task
 kanjo usage --by model --csv         # CSV by model
 kanjo usage --since 2026-11-01 --task ABC-12
+kanjo serve                          # read-only page on http://127.0.0.1:8787/
+kanjo prices check                   # warns when prices are older than 30 days
+kanjo usage --all                    # every project listed in the user config
 ```
 
 `usage` reads only the saved data: run `snapshot` first (at the end of each
@@ -40,6 +47,6 @@ subscription bill.
 
 ## Not built yet
 
-Web page, task delegation to other models, container sandbox, spending caps,
-routing, validated agent returns, task markers, cost per accepted task, and
-`prices check`. See [spec.md](spec.md).
+Task delegation to other models, container sandbox, spending caps, routing,
+validated agent returns, task markers, the journal, cost per accepted task, and
+automatic price updates. See [spec.md](spec.md).

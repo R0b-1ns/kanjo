@@ -72,6 +72,11 @@ When the database is missing or empty the exit code is 0 and the text
 `no data; run kanjo snapshot` is printed: on stdout normally, on stderr with
 `--csv` (stdout then holds only the CSV header, so it stays a valid CSV).
 
+With `--all`, rows of every configured project are reported together
+([../projects.md](../projects.md)); an unreadable project is named on stderr and
+skipped, and with no `projects` the text `no projects; set projects in the user
+config` is printed (exit 0).
+
 `usage` opens the database read-only: it creates nothing and works on a
 read-only data folder.
 
@@ -90,4 +95,6 @@ kanjo usage
 kanjo usage --by model
 kanjo usage --by day --since 2026-11-01 --csv > usage-by-day.csv
 kanjo usage --task ABC-12 --by session
+kanjo usage --all
+kanjo usage --all --by model --csv
 ```
