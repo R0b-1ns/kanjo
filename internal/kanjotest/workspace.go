@@ -108,16 +108,18 @@ func (f *FakeWorkspace) tree(session string) *fakeTree {
 
 // Put creates or changes a regular file of the session's worktree.
 func (f *FakeWorkspace) Put(session, path, content string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.tree(session).files[path] = fakeFile{content: content}
+	f.setFile(session, path, fakeFile{content: content})
 }
 
 // Link creates or changes a symbolic link of the session's worktree.
 func (f *FakeWorkspace) Link(session, path, target string) {
+	f.setFile(session, path, fakeFile{link: target})
+}
+
+func (f *FakeWorkspace) setFile(session, path string, file fakeFile) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.tree(session).files[path] = fakeFile{link: target}
+	f.tree(session).files[path] = file
 }
 
 // Delete removes a file of the session's worktree.

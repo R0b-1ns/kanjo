@@ -28,17 +28,16 @@ type FakeSandbox struct {
 func NewFakeSandbox() *FakeSandbox { return &FakeSandbox{} }
 
 // Specs returns the specs of every box opened.
-func (f *FakeSandbox) Specs() []core.BoxSpec {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.specs)
-}
+func (f *FakeSandbox) Specs() []core.BoxSpec { return cloned(&f.mu, &f.specs) }
 
 // Cmds returns every command run, in order.
-func (f *FakeSandbox) Cmds() []core.Cmd {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Clone(f.cmds)
+func (f *FakeSandbox) Cmds() []core.Cmd { return cloned(&f.mu, &f.cmds) }
+
+// cloned copies a slice that other goroutines append to under mu.
+func cloned[T any](mu *sync.Mutex, s *[]T) []T {
+	mu.Lock()
+	defer mu.Unlock()
+	return slices.Clone(*s)
 }
 
 // Open implements core.Sandbox.
