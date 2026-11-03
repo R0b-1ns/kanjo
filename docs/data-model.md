@@ -97,6 +97,11 @@ command that writes opens them (`snapshot`, `mark start`, `mark end`): the
 read (`usage`, `serve`, `mark current`) read a version 1 database as it is,
 without changing it, and see no markers.
 
+The upgrade cannot be undone: an older kanjo refuses a version 2 database with
+"update kanjo". Copy `kanjo.db` before the first `snapshot` or `mark` with the
+new version, and update every kanjo you use (including the one that reads your
+other projects with `usage --all`).
+
 `snapshots.at` is the RFC 3339 UTC time of a `snapshot` run. Usage rows carry
 no timestamp, so repeating a snapshot leaves them identical.
 
