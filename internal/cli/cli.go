@@ -2,13 +2,16 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"maps"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"unicode"
 
 	"github.com/R0b-1ns/kanjo/internal/config"
@@ -26,6 +29,14 @@ type env struct {
 	home, cwd, xdg string
 	clock          core.Clock
 	update         selfupdate.Updater
+	ctx            context.Context // ends long-running commands (serve); nil means never
+}
+
+func (e env) context() context.Context {
+	if e.ctx == nil {
+		return context.Background()
+	}
+	return e.ctx
 }
 
 type command func(args []string, stdout, stderr io.Writer, e env) int
@@ -33,6 +44,7 @@ type command func(args []string, stdout, stderr io.Writer, e env) int
 var commands = map[string]command{
 	"prices":      pricesCmd,
 	"self-update": selfUpdateCmd,
+	"serve":       serveCmd,
 	"snapshot":    snapshotCmd,
 	"usage":       usageCmd,
 	"version": func(_ []string, stdout, _ io.Writer, _ env) int {
@@ -56,9 +68,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, fmt.Errorf("cannot find the working folder: %w", err))
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	return run(args, stdout, stderr, env{
 		home: home, cwd: cwd, xdg: os.Getenv("XDG_CONFIG_HOME"), clock: sysclock.Clock{},
-		update: productionUpdater(runningBinary()),
+		update: productionUpdater(runningBinary()), ctx: ctx,
 	})
 }
 
