@@ -449,3 +449,37 @@ func TestRedirectLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyANewerReleaseIsAnUpdate(t *testing.T) {
+	const (
+		older = "v0.0.0-20250101000000-111111111111"
+		newer = "v0.0.0-20271231235959-222222222222"
+	)
+	cases := map[string]struct {
+		current string
+		want    bool
+	}{
+		"older build":                 {older, true},
+		"newer build than the latest": {newer, false},
+		"same time, other commit":     {"v0.0.0-20261103120000-bbbbbbbbbbbb", false},
+		"same tag":                    {tag, false},
+		"development build":           {"dev", true},
+		"unknown tag format":          {"v9", true},
+	}
+	for name, c := range cases {
+		f := newFake(t)
+		u, exe := f.updater(t)
+		u.Current = c.current
+		latest, available, err := u.Check(context.Background())
+		if err != nil || available != c.want || latest != tag {
+			t.Errorf("%s: Check = %q, %v, %v; want available=%v", name, latest, available, err, c.want)
+		}
+		_, updated, err := u.Update(context.Background())
+		if err != nil || updated != c.want {
+			t.Errorf("%s: Update updated=%v err=%v; want %v", name, updated, err, c.want)
+		}
+		if !c.want && content(t, exe) != oldBinary {
+			t.Errorf("%s: a release that is not newer must not replace the binary", name)
+		}
+	}
+}

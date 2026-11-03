@@ -61,7 +61,7 @@ func selfUpdateCmd(args []string, stdout, stderr io.Writer, e env) int {
 		if available {
 			fmt.Fprintf(stdout, "update available: %s -> %s\n", e.update.Current, latest)
 		} else {
-			fmt.Fprintf(stdout, "kanjo is up to date (%s)\n", latest)
+			fmt.Fprintf(stdout, "kanjo is up to date (%s)\n", e.update.Current)
 		}
 		return 0
 	}
@@ -72,7 +72,7 @@ func selfUpdateCmd(args []string, stdout, stderr io.Writer, e env) int {
 	case updated:
 		fmt.Fprintf(stdout, "updated %s -> %s\n", e.update.Current, tag)
 	default:
-		fmt.Fprintf(stdout, "kanjo is up to date (%s)\n", tag)
+		fmt.Fprintf(stdout, "kanjo is up to date (%s)\n", e.update.Current)
 	}
 	return 0
 }

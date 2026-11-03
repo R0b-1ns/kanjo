@@ -140,3 +140,17 @@ func TestRunningBinaryIsTheResolvedExecutable(t *testing.T) {
 		t.Fatalf("runningBinary() = %q, want %q", got, want)
 	}
 }
+
+func TestSelfUpdateNeverDowngrades(t *testing.T) {
+	for _, args := range [][]string{nil, {"--check"}} {
+		u, exe := updaterFor(t, 0)
+		u.Current = "v0.0.0-20271231235959-ffffffffffff"
+		code, out, _ := runUpdate(t, u, args...)
+		if code != 0 || out != "kanjo is up to date ("+u.Current+")\n" {
+			t.Errorf("%v: code %d stdout %q", args, code, out)
+		}
+		if got, _ := os.ReadFile(exe); string(got) != "running binary" {
+			t.Errorf("%v: binary replaced", args)
+		}
+	}
+}

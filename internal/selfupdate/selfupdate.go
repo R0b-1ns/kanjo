@@ -34,7 +34,23 @@ const (
 	requestTimeout   = 2 * time.Minute
 )
 
-var tagRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
+var (
+	tagRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
+	// stampRe matches release tags: v0.0.0-<UTC yyyymmddhhmmss>-<12-char sha>.
+	stampRe = regexp.MustCompile(`^v0\.0\.0-([0-9]{14})-[0-9a-f]{12}$`)
+)
+
+// isNewer reports whether release tag latest should replace the running
+// current. Two release tags are ordered by their timestamp, so a build that is
+// as recent as or newer than the latest release (or a deleted latest release)
+// never causes a downgrade. Any other tag, such as "dev", counts as different.
+func isNewer(latest, current string) bool {
+	l, c := stampRe.FindStringSubmatch(latest), stampRe.FindStringSubmatch(current)
+	if l == nil || c == nil {
+		return latest != current
+	}
+	return l[1] > c[1]
+}
 
 // Updater looks for and installs the latest release.
 type Updater struct {
@@ -56,16 +72,16 @@ type release struct {
 	} `json:"assets"`
 }
 
-// Check reports the latest release tag and whether it differs from Current.
+// Check reports the latest release tag and whether it is newer than Current.
 func (u Updater) Check(ctx context.Context) (latest string, available bool, err error) {
 	r, err := u.latest(ctx)
-	return r.Tag, r.Tag != u.Current && err == nil, err
+	return r.Tag, err == nil && isNewer(r.Tag, u.Current), err
 }
 
-// Update installs the latest release unless it is already the running one.
+// Update installs the latest release unless it is not newer than the running one.
 func (u Updater) Update(ctx context.Context) (tag string, updated bool, err error) {
 	r, err := u.latest(ctx)
-	if err != nil || r.Tag == u.Current {
+	if err != nil || !isNewer(r.Tag, u.Current) {
 		return r.Tag, false, err
 	}
 	if u.Exe == "" {
