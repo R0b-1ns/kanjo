@@ -32,14 +32,15 @@ const (
 
 // Config is the resolved configuration. Paths are absolute when the inputs are.
 type Config struct {
-	DataDir    string        `toml:"data_dir"`
-	PricesFile string        `toml:"prices_file"`
-	Claude     ClaudeConfig  `toml:"claude"`
-	Task       TaskConfig    `toml:"task"`
-	Projects   []string      `toml:"projects"`
-	Serve      ServeConfig   `toml:"serve"`
-	Prices     PricesConfig  `toml:"prices"`
-	Markers    MarkersConfig `toml:"markers"`
+	DataDir    string         `toml:"data_dir"`
+	PricesFile string         `toml:"prices_file"`
+	Claude     ClaudeConfig   `toml:"claude"`
+	Task       TaskConfig     `toml:"task"`
+	Projects   []string       `toml:"projects"`
+	Serve      ServeConfig    `toml:"serve"`
+	Prices     PricesConfig   `toml:"prices"`
+	Markers    MarkersConfig  `toml:"markers"`
+	Delegate   DelegateConfig `toml:"delegate"`
 
 	// trustedData is true when the user config set data_dir; a data_dir that
 	// comes from a repository or from the default is checked against symlinks.
@@ -75,6 +76,22 @@ type MarkersConfig struct {
 	MaxEvents int `toml:"max_events"`
 }
 
+// DelegateConfig configures kanjo run. Every key is for the user config only.
+type DelegateConfig struct {
+	TimeoutS        int      `toml:"timeout_s"`
+	CommandTimeoutS int      `toml:"command_timeout_s"`
+	KillGraceS      int      `toml:"kill_grace_s"`
+	MaxLogBytes     int64    `toml:"max_log_bytes"`
+	MaxPatchBytes   int64    `toml:"max_patch_bytes"`
+	MaxPromptBytes  int64    `toml:"max_prompt_bytes"`
+	EnvPass         []string `toml:"env_pass"`
+}
+
+// maxEnvPass bounds env_pass; envNameRe is what a variable name may be.
+const maxEnvPass = 32
+
+var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+
 // ProjectName is the name a project is shown under: its folder's base name.
 func ProjectName(folder string) string { return filepath.Base(folder) }
 
@@ -107,6 +124,10 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 		Serve:   ServeConfig{Port: 8787},
 		Prices:  PricesConfig{MaxAgeDays: 30},
 		Markers: MarkersConfig{MaxEvents: 100000},
+		Delegate: DelegateConfig{
+			TimeoutS: 900, CommandTimeoutS: 600, KillGraceS: 5,
+			MaxLogBytes: 1 << 20, MaxPatchBytes: 16 << 20, MaxPromptBytes: 1 << 20, EnvPass: []string{},
+		},
 	}
 	userDir := xdgConfigHome
 	if userDir == "" {
@@ -279,6 +300,9 @@ func (c Config) check() error {
 	if c.Markers.MaxEvents <= 0 {
 		return errors.New("markers.max_events must be positive")
 	}
+	if err := c.Delegate.check(); err != nil {
+		return err
+	}
 	if slices.Contains(c.Task.Ignore, "") {
 		return errors.New("task.ignore must not hold an empty entry")
 	}
@@ -286,6 +310,29 @@ func (c Config) check() error {
 		return fmt.Errorf("task.pattern: %w", err)
 	}
 	return c.checkProjects()
+}
+
+func (d DelegateConfig) check() error {
+	for _, k := range []struct {
+		name string
+		v    int64
+	}{
+		{"timeout_s", int64(d.TimeoutS)}, {"command_timeout_s", int64(d.CommandTimeoutS)}, {"kill_grace_s", int64(d.KillGraceS)},
+		{"max_log_bytes", d.MaxLogBytes}, {"max_patch_bytes", d.MaxPatchBytes}, {"max_prompt_bytes", d.MaxPromptBytes},
+	} {
+		if k.v <= 0 {
+			return fmt.Errorf("delegate.%s must be positive", k.name)
+		}
+	}
+	if len(d.EnvPass) > maxEnvPass {
+		return fmt.Errorf("delegate.env_pass holds more than %d names", maxEnvPass)
+	}
+	for _, n := range d.EnvPass {
+		if !envNameRe.MatchString(n) {
+			return errors.New("delegate.env_pass holds an invalid variable name")
+		}
+	}
+	return nil
 }
 
 // checkProjects wants absolute folders whose base names are safe, distinct
