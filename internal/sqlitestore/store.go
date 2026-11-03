@@ -98,13 +98,16 @@ type stmt struct {
 	args  []any
 }
 
-// ReplaceSessions implements core.Store.
-func (s *Store) ReplaceSessions(ctx context.Context, b core.Batch, log core.SnapshotLog) error {
+// Merge implements core.Store.
+func (s *Store) Merge(ctx context.Context, b core.Batch, log core.SnapshotLog) error {
 	var stmts []stmt
+	for _, r := range b.Rows {
+		stmts = append(stmts, stmt{"DELETE FROM usage WHERE source = ? AND session = ? AND day = ? AND model = ? AND long_context = ?",
+			[]any{r.Source, r.Session, r.Day, r.Model, r.LongContext}})
+	}
 	for _, ses := range b.Sessions {
-		stmts = append(stmts,
-			stmt{"DELETE FROM usage WHERE source = ? AND session = ?", []any{ses.Source, ses.Session}},
-			stmt{"INSERT OR REPLACE INTO sessions VALUES(?,?,?,?)", []any{ses.Source, ses.Session, ses.TaskSource, ses.LabelsSeen}})
+		stmts = append(stmts, stmt{"INSERT OR REPLACE INTO sessions VALUES(?,?,?,?)",
+			[]any{ses.Source, ses.Session, ses.TaskSource, ses.LabelsSeen}})
 	}
 	for _, r := range b.Rows {
 		stmts = append(stmts, stmt{"INSERT OR REPLACE INTO usage(" + usageCols + ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

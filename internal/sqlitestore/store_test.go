@@ -108,7 +108,7 @@ func TestOpenRejectsNewerSchema(t *testing.T) {
 func TestReopenKeepsData(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
-	if err := s.ReplaceSessions(context.Background(), oneRow("ABC-1"), logAt); err != nil {
+	if err := s.Merge(context.Background(), oneRow("ABC-1"), logAt); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -122,7 +122,7 @@ func TestHostileValuesStayData(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
 	hostile := "x'); DROP TABLE usage;--"
-	if err := s.ReplaceSessions(context.Background(), oneRow(hostile), logAt); err != nil {
+	if err := s.Merge(context.Background(), oneRow(hostile), logAt); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Rows(context.Background()); err == nil {
@@ -146,8 +146,8 @@ func TestClosedStoreReturnsErrors(t *testing.T) {
 	}
 	s.Close()
 	ctx := context.Background()
-	if err := s.ReplaceSessions(ctx, oneRow("ABC-1"), logAt); err == nil {
-		t.Error("ReplaceSessions on a closed store must fail")
+	if err := s.Merge(ctx, oneRow("ABC-1"), logAt); err == nil {
+		t.Error("Merge on a closed store must fail")
 	}
 	if _, err := s.Rows(ctx); err == nil {
 		t.Error("Rows on a closed store must fail")

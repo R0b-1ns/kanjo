@@ -56,7 +56,7 @@ aggregation time from the data dir list, so slice 1 rows need no project column.
 | Day | UTC date of the message `timestamp` |
 | `reasoning` for Claude | 0; thinking is already inside `output_tokens` (documented) |
 | Haiku long-context tier | Chosen per message. `prices.json` may give a model a `long_context` tier with `above_prompt_tokens`; prompt = input + cache_read + cache_creation. Rows carry a `long_context` flag in their key |
-| Snapshot merge | For each session read live, all its stored rows are replaced by the live rows; sessions absent from transcripts are kept untouched. Repeated snapshots are idempotent and a changed task mapping cannot double count |
+| Snapshot merge | A live row replaces the stored row with the same source, session, day, model and long-context flag, whatever its task; every other stored row is kept (sources purge old data, and the spec forbids deleting rows the transcripts no longer have). Repeated snapshots are idempotent and a changed task mapping cannot double count |
 | Task attribution (this slice) | (2) manual TSV map `<session-prefix>\t<task>` then (3) most frequent label matching `task.pattern` in non-sidechain user messages, else `-`. Markers (1) come later |
 | Default `task.pattern` | `\b[A-Z][A-Z0-9]+-[0-9]+(\.[0-9]+)?\b` (issue-style ids) |
 | Default project prefix | current directory with `/` replaced by `-` |

@@ -6,7 +6,7 @@ import (
 )
 
 // Snapshot reads the source, validates everything it returned, and replaces
-// the stored rows of the sessions it saw. Nothing is written when any row or
+// the stored rows it supersedes; rows the source no longer has are kept. Nothing is written when any row or
 // session is invalid. Errors name the index of the bad item, never its content.
 func Snapshot(ctx context.Context, src UsageSource, st Store, clk Clock) (SnapshotLog, error) {
 	b, err := src.Read(ctx)
@@ -24,7 +24,7 @@ func Snapshot(ctx context.Context, src UsageSource, st Store, clk Clock) (Snapsh
 		}
 	}
 	log := SnapshotLog{At: clk.Now(), Sessions: len(b.Sessions), Rows: len(b.Rows), Skipped: b.Skipped}
-	if err := st.ReplaceSessions(ctx, b, log); err != nil {
+	if err := st.Merge(ctx, b, log); err != nil {
 		return SnapshotLog{}, fmt.Errorf("store snapshot: %w", err)
 	}
 	return log, nil

@@ -27,16 +27,16 @@ func NewMemStore() *MemStore {
 	return &MemStore{rows: map[core.Key]core.UsageRow{}, sessions: map[sessionKey]core.SessionInfo{}}
 }
 
-// ReplaceSessions implements core.Store.
-func (m *MemStore) ReplaceSessions(_ context.Context, b core.Batch, log core.SnapshotLog) error {
+// Merge implements core.Store.
+func (m *MemStore) Merge(_ context.Context, b core.Batch, log core.SnapshotLog) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	replaced := map[sessionKey]bool{}
-	for _, s := range b.Sessions {
-		replaced[sessionKey{s.Source, s.Session}] = true
+	replaced := map[slot]bool{}
+	for _, r := range b.Rows {
+		replaced[slotOf(r.Key)] = true
 	}
 	for k := range m.rows {
-		if replaced[sessionKey{k.Source, k.Session}] {
+		if replaced[slotOf(k)] {
 			delete(m.rows, k)
 		}
 	}
@@ -49,6 +49,15 @@ func (m *MemStore) ReplaceSessions(_ context.Context, b core.Batch, log core.Sna
 	m.logs = append(m.logs, log)
 	return nil
 }
+
+// slot is a key without its task: a new task label for the same day and model
+// replaces the old row.
+type slot struct {
+	source, session, day, model string
+	longContext                 bool
+}
+
+func slotOf(k core.Key) slot { return slot{k.Source, k.Session, k.Day, k.Model, k.LongContext} }
 
 // Rows implements core.Store; rows come back sorted by key.
 func (m *MemStore) Rows(context.Context) ([]core.UsageRow, error) {

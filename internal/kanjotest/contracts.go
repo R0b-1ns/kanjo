@@ -34,8 +34,8 @@ var storeLog = core.SnapshotLog{At: time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
 
 func mustReplace(t *testing.T, s core.Store, b core.Batch) {
 	t.Helper()
-	if err := s.ReplaceSessions(context.Background(), b, storeLog); err != nil {
-		t.Fatalf("ReplaceSessions: %v", err)
+	if err := s.Merge(context.Background(), b, storeLog); err != nil {
+		t.Fatalf("Merge: %v", err)
 	}
 }
 
@@ -87,11 +87,18 @@ var storeCases = []struct {
 			t.Fatalf("sessions = %v", ss)
 		}
 	}},
-	{"replacing a session drops its old rows", func(t *testing.T, s core.Store) {
+	{"a new task on the same day and model replaces the old row", func(t *testing.T, s core.Store) {
 		mustReplace(t, s, batch([]core.UsageRow{row("s-1", "2026-11-03", "ABC-1", "m", 5, nil)}, "s-1"))
 		again := []core.UsageRow{row("s-1", "2026-11-03", "XYZ-2", "m", 5, nil)}
 		mustReplace(t, s, batch(again, "s-1"))
 		wantRows(t, s, again)
+	}},
+	{"rows the source no longer has are kept", func(t *testing.T, s core.Store) {
+		gone, stale := row("s-1", "2026-11-03", "ABC-1", "m", 5, nil), row("s-1", "2026-11-04", "ABC-1", "m", 6, nil)
+		mustReplace(t, s, batch([]core.UsageRow{gone, stale}, "s-1"))
+		fresh := row("s-1", "2026-11-04", "ABC-1", "m", 9, nil)
+		mustReplace(t, s, batch([]core.UsageRow{fresh}, "s-1"))
+		wantRows(t, s, []core.UsageRow{gone, fresh})
 	}},
 	{"untouched sessions are kept", func(t *testing.T, s core.Store) {
 		old := row("s-old", "2026-10-01", "ABC-1", "m", 1, nil)
