@@ -96,7 +96,7 @@ func TestOpenRejectsNewerSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("PRAGMA user_version = 99"); err != nil {
+	if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
@@ -166,8 +166,8 @@ func TestOpenSetsSchemaVersion(t *testing.T) {
 	}
 	defer db.Close()
 	var v int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 2 {
-		t.Fatalf("user_version = %d, err %v; want 2", v, err)
+	if err := db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 3 {
+		t.Fatalf("user_version = %d, err %v; want 3", v, err)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestOpenReadOnlyRejectsNewerSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("PRAGMA user_version = 99"); err != nil {
+	if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
