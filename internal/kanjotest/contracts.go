@@ -60,7 +60,11 @@ func sessionsOf(t *testing.T, s core.Store) []core.SessionInfo {
 
 func wantRows(t *testing.T, s core.Store, want []core.UsageRow) {
 	t.Helper()
-	if got := rowsOf(t, s); !reflect.DeepEqual(got, want) {
+	got := rowsOf(t, s)
+	if len(got) == 0 && len(want) == 0 {
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
