@@ -9,7 +9,7 @@ files are applied in order, then command-line options.
 |---|---|---|---|
 | 1 | Built-in defaults | | Listed in the key table below |
 | 2 | User file: `$XDG_CONFIG_HOME/kanjo/config.toml`, or `~/.config/kanjo/config.toml` when `XDG_CONFIG_HOME` is unset | trusted | Can point anywhere |
-| 3 | Repository file: `./kanjo.toml` in the current folder | **untrusted** (it comes from whatever repository you are in) | Restricted, see below |
+| 3 | Repository file: `./kanjo.toml` in the current folder | **untrusted** (it comes from whatever repository you are in) | Allow-list of keys, see below |
 | 4 | Options | trusted | Only `--data-dir` overrides config today |
 
 A missing file is fine. A file that exists but cannot be read, is larger than
@@ -33,16 +33,21 @@ folder.
 ## What a repository `kanjo.toml` may set
 
 A repository file is untrusted: opening a cloned repository must not make
-kanjo write elsewhere or read other projects. These keys are refused (exit 1,
-the message names the file) in `./kanjo.toml`; put them in the user file or
-pass the option instead.
+kanjo write elsewhere, read other projects, run out of memory, or copy a secret
+you typed into a prompt into the database (a repository-chosen `task.pattern`
+could do that). Only these keys are accepted in `./kanjo.toml`; any other key is
+refused (exit 1, the message names the file and the key). Put the others in the
+user file or pass the option.
 
 | Key | Rule in `./kanjo.toml` |
 |---|---|
 | `data_dir`, `prices_file`, `task.map_file` | The path, once symbolic links are resolved, must be the current folder or inside it. A dangling symbolic link is refused |
-| `claude.projects_dir` | Not allowed |
 | `claude.project_prefixes` | Every prefix must equal the current folder's own project name (the default prefix) or start with it followed by `-`, so it can only widen to sub-folders of this project |
-| other keys | Allowed |
+| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern` | Not allowed (user config only) |
+
+The default `data_dir` (`.ai-usage`) follows the same rule when no user config
+or `--data-dir` sets it: if `.ai-usage` is a symbolic link leading outside the
+current folder, kanjo refuses to start.
 
 ## Examples
 
@@ -56,7 +61,7 @@ data_dir = "/home/me/.local/share/kanjo"
 project_prefixes = ["-home-me-work"]
 ```
 
-Repository file `./kanjo.toml`, a custom label pattern (`TASK-123`):
+User file (a repository `kanjo.toml` may not set `task.pattern`), a custom label pattern (`TASK-123`):
 
 ```toml
 [task]

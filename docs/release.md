@@ -12,10 +12,13 @@ Every merge whose checks pass becomes a release. There is no release PR.
 ## Tag
 
 ```
-v0.0.0-<UTC yyyymmddhhmmss of the commit>-<12-character commit sha>
+v0.0.0-<UTC yyyymmddhhmmss of the build>-<12-character commit sha>
 ```
 
-Example: `v0.0.0-20261103120000-a1b2c3d4e5f6`. It sorts by time. The binary is
+Example: `v0.0.0-20261103120000-a1b2c3d4e5f6`. It sorts by time. The time is the
+build time (`date -u`), not the commit date, because `kanjo self-update` only
+installs a release whose stamp is newer than the running one: a commit with a
+future date must not be able to block later updates. The binary is
 built with this tag as its version, so `kanjo version` prints it and
 `kanjo self-update` can compare it to the latest release.
 

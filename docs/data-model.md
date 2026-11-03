@@ -36,11 +36,18 @@ Default `./.ai-usage/` (`data_dir`):
 | File | Mode | Content |
 |---|---|---|
 | `kanjo.db` | 0600 | SQLite database |
-| `.gitignore` | 0644 | `*` followed by a newline, so the folder is never committed. An existing file is left alone |
+| `.gitignore` | 0644 | `*` followed by a newline, so the folder is never committed. An existing file is kept only if it still ignores everything |
 | `claude-tasks.tsv` | yours | Optional manual task map |
 
 The folder is created with mode 0700. Keep it out of version control anyway:
 `.ai-usage/` is in this repository's `.gitignore`.
+
+Safety checks when opening the folder (a cloned repository could ship files in it):
+
+- `kanjo.db` and `.gitignore` must not be symbolic links (kanjo refuses, naming the path).
+- An existing `.gitignore` must contain a `*` line and no `!` rule, otherwise kanjo refuses, because the database could then be committed.
+- The database is opened with `trusted_schema` off, so views or triggers inside a foreign `kanjo.db` cannot call unsafe functions.
+- `kanjo usage` opens the database read-only and creates nothing.
 
 ## SQLite schema (`PRAGMA user_version = 1`)
 

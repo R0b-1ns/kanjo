@@ -24,8 +24,10 @@ kanjo self-update [--check]
 6. If the SHA-256 differs from `SHA256SUMS`, delete the temporary file and fail: the running binary is untouched.
 7. Mark the file executable (0755), flush it, and rename it over the running binary.
 
-Safety rules: only `https` URLs without credentials on these hosts are
-contacted, including after redirects (at most 5): `api.github.com`,
+Safety rules: the binary and `SHA256SUMS` must be under
+`https://github.com/R0b-1ns/kanjo/releases/download/<release tag>/` (an allowed
+host alone is not enough: GitHub hosts every repository). Only `https` URLs
+without credentials on these hosts are contacted, including after redirects (at most 5): `api.github.com`,
 `github.com`, `objects.githubusercontent.com`,
 `release-assets.githubusercontent.com`. Request timeout: 2 minutes. Server
 error text is never echoed.
