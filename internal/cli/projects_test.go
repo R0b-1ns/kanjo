@@ -40,20 +40,25 @@ func usageRow(session, day, task, model string, msgs int64, tok core.Tokens) cor
 	return core.UsageRow{Key: core.Key{Source: "claude", Session: session, Day: day, Task: task, Model: model}, Messages: msgs, Tokens: tok}
 }
 
-// listProjects puts projects = [...] first in the user config (a top-level
+// topLevel puts top-level TOML lines first in the user config (a top-level
 // key placed after a table would belong to the table).
-func (w *world) listProjects(folders ...string) {
+func (w *world) topLevel(lines string) {
 	w.t.Helper()
 	path := filepath.Join(w.home, ".config", "kanjo", "config.toml")
 	old, err := os.ReadFile(path)
 	if err != nil {
 		w.t.Fatal(err)
 	}
+	write(w.t, path, lines+string(old))
+}
+
+func (w *world) listProjects(folders ...string) {
+	w.t.Helper()
 	quoted := make([]string, len(folders))
 	for i, f := range folders {
 		quoted[i] = `"` + f + `"`
 	}
-	write(w.t, path, "projects = ["+strings.Join(quoted, ", ")+"]\n"+string(old))
+	w.topLevel("projects = [" + strings.Join(quoted, ", ") + "]\n")
 }
 
 // twoProjects: app-a costs 2.0000 (1M sonnet input tokens); app-b costs

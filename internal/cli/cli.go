@@ -31,6 +31,7 @@ type env struct {
 type command func(args []string, stdout, stderr io.Writer, e env) int
 
 var commands = map[string]command{
+	"prices":      pricesCmd,
 	"self-update": selfUpdateCmd,
 	"snapshot":    snapshotCmd,
 	"usage":       usageCmd,

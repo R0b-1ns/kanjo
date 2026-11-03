@@ -24,6 +24,7 @@ func readDoc(t *testing.T, rel string) string {
 
 func TestEveryCommandHasAPageDocumentingItsFlags(t *testing.T) {
 	registers := map[string]func(*flag.FlagSet){
+		"prices":      func(fs *flag.FlagSet) { pricesCheckFlags(fs) },
 		"snapshot":    func(fs *flag.FlagSet) { snapshotFlags(fs) },
 		"usage":       func(fs *flag.FlagSet) { usageFlags(fs) },
 		"self-update": func(fs *flag.FlagSet) { selfUpdateFlags(fs) },
@@ -35,7 +36,11 @@ func TestEveryCommandHasAPageDocumentingItsFlags(t *testing.T) {
 			t.Errorf("command %q has no flag registration in this test: add it", name)
 			continue
 		}
-		doc := readDoc(t, "commands/"+name+".md")
+		page := name
+		if name == "prices" {
+			page = "prices-check" // a command with a subcommand: the page is named after it
+		}
+		doc := readDoc(t, "commands/"+page+".md")
 		fs := flag.NewFlagSet(name, flag.ContinueOnError)
 		register(fs)
 		fs.VisitAll(func(f *flag.Flag) {
