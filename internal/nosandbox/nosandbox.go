@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -49,18 +48,7 @@ func (Sandbox) Open(_ context.Context, spec core.BoxSpec) (core.Box, error) {
 		os.RemoveAll(private)
 		return nil, err
 	}
-	return &box{dir: spec.Dir, env: withoutPrivate(spec.Env), private: private, home: home, tmp: tmp}, nil
-}
-
-// withoutPrivate drops any HOME or TMPDIR: the box sets its own.
-func withoutPrivate(env []string) []string {
-	out := make([]string, 0, len(env)+2)
-	for _, e := range env {
-		if !strings.HasPrefix(e, "HOME=") && !strings.HasPrefix(e, "TMPDIR=") {
-			out = append(out, e)
-		}
-	}
-	return out
+	return &box{dir: spec.Dir, env: spec.Env, private: private, home: home, tmp: tmp}, nil
 }
 
 type box struct {
@@ -101,7 +89,8 @@ func (b *box) Exec(ctx context.Context, c core.Cmd) (core.ExecResult, error) {
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir, cmd.Stdin = b.dir, c.Stdin
-	cmd.Env = append(append(append([]string{}, b.env...), withoutPrivate(c.Env)...), "HOME="+b.home, "TMPDIR="+b.tmp)
+	// the private HOME and TMPDIR come last: for a repeated name the last value wins
+	cmd.Env = append(append(append([]string{}, b.env...), c.Env...), "HOME="+b.home, "TMPDIR="+b.tmp)
 	cmd.Stdout, cmd.Stderr = c.Out, c.Out
 	if c.Out == nil {
 		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard

@@ -197,3 +197,18 @@ func TestAScriptIsNotInsideAFolderThatDoesNotExistYet(t *testing.T) {
 		t.Fatalf("worktrees folder not created yet: %v", err)
 	}
 }
+
+func TestRefusesAScriptOwnedBySomeoneElse(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("everything is yours as root")
+	}
+	if _, err := scriptagent.New("/bin/sh", ""); err == nil {
+		t.Fatal("a root-owned executable was accepted")
+	}
+}
+
+func TestAScriptIsNotInsideAFolderWhoseParentDoesNotExist(t *testing.T) {
+	if _, err := scriptagent.New(script(t, realTemp(t), 0o700), filepath.Join(realTemp(t), "no", "such", "worktrees")); err != nil {
+		t.Fatal(err)
+	}
+}

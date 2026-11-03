@@ -571,3 +571,17 @@ func TestUserConfigMaySetDelegate(t *testing.T) {
 		t.Fatalf("%+v, %v", c.Delegate, err)
 	}
 }
+
+func TestDelegateEnvPassAcceptsExactlyThirtyTwoNames(t *testing.T) {
+	names := make([]string, 33)
+	for i := range names {
+		names[i] = "V" + strings.Repeat("A", i)
+	}
+	for n, wantOK := range map[int]bool{32: true, 33: false} {
+		e := newEnv(t)
+		put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), "[delegate]\nenv_pass = [\""+strings.Join(names[:n], "\", \"")+"\"]\n")
+		if _, err := e.load(t); (err == nil) != wantOK {
+			t.Errorf("%d names: err = %v", n, err)
+		}
+	}
+}

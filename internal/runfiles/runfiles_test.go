@@ -146,3 +146,21 @@ func TestWriteIsAtomic(t *testing.T) {
 		t.Fatalf("content = %q", got)
 	}
 }
+
+func TestAnUncreatableRunsFolderIsAnError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no", "such", "dir")
+	if err := runfiles.New(missing, 1<<20).Write(context.Background(), session, core.ArtPatch, []byte("x")); err == nil {
+		t.Fatal("a data folder that does not exist must not be written into")
+	}
+}
+
+func TestAWriteToAClosedLogFails(t *testing.T) {
+	w, err := runfiles.New(t.TempDir(), 1<<20).Create(context.Background(), session, core.ArtAgentLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	if n, err := io.WriteString(w, "late"); err == nil || n != 0 {
+		t.Fatalf("n = %d, err = %v; want 0 and an error", n, err)
+	}
+}
