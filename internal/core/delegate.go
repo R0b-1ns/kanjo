@@ -21,6 +21,8 @@ const (
 	ReasonInterrupted     Reason = "interrupted"
 	ReasonStray           Reason = "stray-files"
 	ReasonMissing         Reason = "missing-files"
+	ReasonForbidden       Reason = "forbidden-path"
+	ReasonUnsafeLink      Reason = "unsafe-symlink"
 )
 
 // reasonVerdict says which verdict a reason leads to.
@@ -34,6 +36,8 @@ var reasonVerdict = map[Reason]RunVerdict{
 	ReasonInterrupted:     RunInterrupted,
 	ReasonStray:           RunStray,
 	ReasonMissing:         RunFailed,
+	ReasonForbidden:       RunFailed,
+	ReasonUnsafeLink:      RunFailed,
 }
 
 // errAgentTimeout is the cause of the agent phase's deadline.
@@ -183,6 +187,7 @@ type delegation struct {
 	launches      int
 	retries       int
 	before, after State
+	agentOK       bool // the last launch ended normally
 }
 
 func (g *delegation) fail(r Reason) { g.reasons = append(g.reasons, r) }
@@ -270,44 +275,70 @@ func (g *delegation) openBox() bool {
 }
 
 // agentPhase runs the agent, and once more in the same session when expected
-// files are missing after a normal first launch. One deadline covers both.
+// files are missing after a normal first launch. One deadline covers both. The
+// worktree is then read once more and judged, whatever happened to the agent.
 func (g *delegation) agentPhase() {
+	var ok bool
+	if g.before, ok = g.read(); !ok {
+		return
+	}
 	ctx, cancel := context.WithTimeoutCause(g.ctx, g.req.Timeout, errAgentTimeout)
 	defer cancel()
-	if !g.snapshot(&g.before) {
-		return
+	fresh := false // after reflects the end of the last launch
+	if g.runAgent(ctx, g.req.Prompt, false) {
+		if g.after, ok = g.read(); !ok {
+			return
+		}
+		fresh = true
+		if missing := missingExpected(ChangedPaths(g.before, g.after), g.req.Expect); len(missing) > 0 {
+			g.retries++
+			g.runAgent(ctx, RetryPrompt(missing), true)
+			fresh = false
+		}
 	}
-	if !g.runAgent(ctx, g.req.Prompt, false) || !g.snapshot(&g.after) {
-		return
+	if !fresh {
+		if g.after, ok = g.read(); !ok {
+			return
+		}
 	}
-	missing := missingExpected(ChangedPaths(g.before, g.after), g.req.Expect)
-	if len(missing) == 0 {
-		return
-	}
-	g.retries++
-	if g.runAgent(ctx, RetryPrompt(missing), true) && g.snapshot(&g.after) &&
-		len(missingExpected(ChangedPaths(g.before, g.after), g.req.Expect)) > 0 {
-		g.fail(ReasonMissing)
+	g.judge()
+}
+
+// judge compares the final state with the limits of the task.
+func (g *delegation) judge() {
+	f := JudgeChanges(ChangedPaths(g.before, g.after), g.req.Expect, g.req.Forbid)
+	for _, c := range []struct {
+		found  bool
+		reason Reason
+	}{
+		{len(f.ForbiddenTouched) > 0, ReasonForbidden},
+		{len(f.UnsafeSymlinks) > 0, ReasonUnsafeLink},
+		{g.agentOK && len(f.Missing) > 0, ReasonMissing},
+		{len(f.Unexpected) > 0, ReasonStray},
+	} {
+		if c.found {
+			g.fail(c.reason)
+		}
 	}
 }
 
-// snapshot reads the worktree state into dst; a failure ends the run.
-func (g *delegation) snapshot(dst *State) bool {
+// read takes the state of the worktree; a failure ends the run.
+func (g *delegation) read() (State, bool) {
 	bk, cancel := g.bookkeeping()
 	defer cancel()
 	st, err := g.d.Workspace.State(bk, g.w)
 	if err != nil {
 		g.fail(ReasonWorkspaceFailed)
-		return false
+		return State{}, false
 	}
-	*dst = st
-	return true
+	return st, true
 }
 
 // runAgent launches the agent once and reports whether it ended normally
 // (exit 0, not stopped, no quota); otherwise it records why.
 func (g *delegation) runAgent(ctx context.Context, prompt string, resume bool) bool {
 	g.launches++
+	g.agentOK = false
 	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume})
 	switch {
 	case err != nil:
@@ -319,9 +350,9 @@ func (g *delegation) runAgent(ctx context.Context, prompt string, resume bool) b
 	case res.Exit != 0:
 		g.fail(ReasonAgentFailed)
 	default:
-		return true
+		g.agentOK = true
 	}
-	return false
+	return g.agentOK
 }
 
 // RetryPrompt is the fixed text of the second launch. Only valid repository

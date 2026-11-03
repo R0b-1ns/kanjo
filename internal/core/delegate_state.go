@@ -1,6 +1,12 @@
 package core
 
-import "slices"
+import (
+	"fmt"
+	"path"
+	"slices"
+	"strings"
+	"unicode/utf8"
+)
 
 // ChangeKind says how a file differs between two states.
 type ChangeKind int
@@ -71,4 +77,74 @@ func missingExpected(changes []Change, expect []string) []string {
 		}
 	}
 	return out
+}
+
+// Findings are what the changes of a run say about the task's limits. Names
+// are safe to print: a name with a control character or invalid UTF-8 is
+// reported as <invalid-name-N>.
+type Findings struct {
+	Missing, ForbiddenTouched, Unexpected, UnsafeSymlinks []string
+	Invalid                                               int
+}
+
+// JudgeChanges compares the changes with the paths the task expects and
+// forbids. A forbidden path matches itself and everything under it,
+// case-insensitively; any ".git" segment is forbidden. Files outside expect
+// are unexpected only when expect is not empty. A link added or changed is
+// unsafe when its target is absolute or leaves the worktree.
+func JudgeChanges(changes []Change, expect, forbid []string) Findings {
+	var f Findings
+	names := namer{}
+	for _, c := range changes {
+		switch {
+		case forbidden(c.Path, forbid):
+			f.ForbiddenTouched = append(f.ForbiddenTouched, names.label(c.Path))
+		case len(expect) > 0 && !slices.Contains(expect, c.Path):
+			f.Unexpected = append(f.Unexpected, names.label(c.Path))
+		}
+		if c.Kind != ChangeDeleted && c.Mode == "120000" && unsafeLink(c.Path, c.Link) {
+			f.UnsafeSymlinks = append(f.UnsafeSymlinks, names.label(c.Path))
+		}
+	}
+	f.Missing = missingExpected(changes, expect)
+	f.Invalid = len(names)
+	return f
+}
+
+func forbidden(p string, forbid []string) bool {
+	low := strings.ToLower(p)
+	for _, seg := range strings.Split(low, "/") {
+		if seg == ".git" {
+			return true
+		}
+	}
+	for _, f := range forbid {
+		f = strings.ToLower(f)
+		if low == f || strings.HasPrefix(low, f+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func unsafeLink(linkPath, target string) bool {
+	if target == "" || path.IsAbs(target) {
+		return true
+	}
+	resolved := path.Join(path.Dir(linkPath), target)
+	return resolved == ".." || strings.HasPrefix(resolved, "../")
+}
+
+// namer replaces names that are not safe to print.
+type namer map[string]string
+
+func (n namer) label(name string) string {
+	if utf8.ValidString(name) && !strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return name
+	}
+	if l, ok := n[name]; ok {
+		return l
+	}
+	n[name] = fmt.Sprintf("<invalid-name-%d>", len(n)+1)
+	return n[name]
 }

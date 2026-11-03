@@ -338,7 +338,7 @@ func (a *deadlineAgent) Run(ctx context.Context, b core.Box, req core.AgentReque
 }
 
 func TestRetriesOnceWhenAFileIsMissing(t *testing.T) {
-	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("other.txt", "x")}, writeA)
+	r := newRig(t, []kanjotest.AgentStep{}, writeA)
 	out := r.run(r.req())
 	rec := r.record()
 	if out.Result.Verdict != core.RunOK || rec.Launches != 2 || rec.Retries != 1 || r.agent.Launches() != 2 {
@@ -438,5 +438,40 @@ func TestTimeoutCoversBothLaunches(t *testing.T) {
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Fatal("the second launch got a fresh delay")
+	}
+}
+
+func TestForbiddenPathTouchedFailsTheRun(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("src/a.go", "x"), kanjotest.Write("config/prod.yaml", "x")})
+	req := r.req()
+	req.Forbid = []string{"config"}
+	out := r.run(req)
+	if out.Result.Verdict != core.RunFailed || out.Result.Exit != 1 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestStrayFilesGiveCheckStrayFilesAndExit0(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("src/a.go", "x"), kanjotest.Write("notes.txt", "x")})
+	out := r.run(r.req())
+	if out.Result.Verdict != core.RunStray || out.Result.Exit != 0 {
+		t.Fatalf("outcome %+v", out.Result)
+	}
+}
+
+func TestUnsafeSymlinkFailsTheRun(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write("src/a.go", "x"), kanjotest.Symlink("src/a.go", "/etc/passwd")})
+	req := r.req()
+	if out := r.run(req); out.Result.Verdict != core.RunFailed {
+		t.Fatalf("outcome %+v (an unsafe link fails even when the file was expected)", out.Result)
+	}
+}
+
+func TestForbiddenIsJudgedEvenAfterATimeout(t *testing.T) {
+	r := newRig(t, []kanjotest.AgentStep{kanjotest.Write(".git/hooks/pre-commit", "x"), kanjotest.Loop()})
+	req := r.req()
+	req.Timeout = 30 * time.Millisecond
+	if out := r.run(req); out.Result.Verdict != core.RunTimeout || out.Result.Exit != 124 {
+		t.Fatalf("outcome %+v", out.Result)
 	}
 }
