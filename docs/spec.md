@@ -277,10 +277,16 @@ State it in the page and in `usage`.
 
 ## 8. Journal
 
-One line per event: run (date, session, model, launches, retries, duration,
-script verdict) and lead (date, session, verdict). Tab-separated text format,
-append only. Used by `summary` and by the measurement of the trial
-(retry rate, acceptance rate, time).
+One row per event: run (date, session, model, launches, retries, duration,
+script verdict) and lead (date, session, verdict). Append only. Used by
+`summary` and by the measurement of the trial (retry rate, acceptance rate,
+time).
+
+Decided in slice 3: the journal is SQLite tables in the data folder's
+`kanjo.db`, not a tab-separated file, so the folder protections and the
+transaction guarantees apply to it. Each kind of event has its own table. The
+first one built is `markers` (section 15); the run and lead tables come with
+the delegation engine.
 
 ## 9. Web page (serve)
 
@@ -449,22 +455,31 @@ Requirements:
 
 ## 15. Task markers (mark)
 
-`mark start <task> [--note ...]` and `mark end` write dated events in an
-append-only journal; `mark current` shows the active task.
+`mark start <task>` and `mark end` write dated events in the append-only
+journal (a `markers` table, section 8); `mark current` shows the active task.
+No `--note` option: free text is where a secret ends up in stored data, and
+nothing would read it. It can be added later with a bounded column.
 
 Attribution of Claude usage: each message is assigned to the task active at
 the instant of its timestamp. Markers win over the manual table and over the
 text heuristic (section 6). Before the first marker or outside any interval,
 the old rule applies.
 
-A global marker by default, with an option to bind it to a specific session
-(several Claude sessions in parallel on different tasks).
+A global marker by default (global within one data folder), with
+`--session <id>` to bind it to a specific session (several Claude sessions in
+parallel on different tasks). A session marker wins over the global one for
+that session. A marker is stamped when the command runs; there is no
+backdating, and a clock behind the last marker of the scope is refused. Details
+and edge cases: `docs/markers.md`.
 
 `usage` flags the messages attributed by heuristic rather than by marker, to
 measure the reliability of the attribution.
 
 The run, finish and mark journals share the clock of the Clock interface, to
-align junior runs and Claude's working time on the same task.
+align junior runs and Claude's working time on the same task. `snapshot` stays
+idempotent: the attribution is a function of transcripts, markers, map and
+configuration. Saved rows are replaced per slot (session, day, model, tier),
+so a marker added later re-attributes the messages still in the transcripts.
 
 ## 16. Validated JSON agent returns
 

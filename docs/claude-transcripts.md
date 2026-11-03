@@ -50,10 +50,13 @@ cannot overwrite what was saved earlier.
 
 ## Task attribution
 
-Every row of a session gets one task, chosen in this order:
+Each message gets a task. The markers of [markers.md](markers.md) come first,
+by the message's own timestamp: a marker bound to the session, then a global
+marker. A message without an active marker gets its session's task, chosen in
+this order:
 
 1. **Manual map** (`task.map_file`, default `<data_dir>/claude-tasks.tsv`): the longest session-id prefix that matches. `task_source` is `map`.
-2. **Heuristic**: the most frequent label matching `task.pattern` and not listed in `task.ignore` in the session's own user messages (ties go to the alphabetically first label). `task_source` is `heuristic`.
+2. **Heuristic**: the most frequent label matching `task.pattern` and not listed in `task.ignore` in the session's own user messages (ties go to the alphabetically first label). `task_source` is `heuristic`. `task_source` describes this fallback; it is recorded even when markers cover every message.
 3. Otherwise `-`, `task_source` `none`.
 
 Only text typed by the user counts for the heuristic: messages of sidechains
@@ -73,6 +76,6 @@ A session id prefix starts with a letter, digit or `_` and continues with `[A-Za
 
 ## Known limits
 
-- A session that works on several tasks is counted entirely on one task (the map or the most frequent label). `usage` warns when a session named more than one label. Task markers that split a session per message are planned, not built.
+- Without markers, a session that works on several tasks is counted entirely on one task (the map or the most frequent label). `usage` warns when a session named more than one label for messages that have no marker. Use `kanjo mark` to split a session per message.
 - Claude's cost is an estimate at API list prices, not a subscription bill.
 - The transcript format can change; unknown fields are ignored and unreadable lines are skipped and counted rather than failing.

@@ -47,6 +47,8 @@ task    messages  input  output  reasoning  cache_write_5m  cache_write_1h  cach
 ABC-12  4         36     164     0          250             340             1003        0.0066   0
 XYZ-3   2         90100  250     0          400             0               20300       0.0461   1
 total est_usd 0.0527 (1 messages unpriced)
+attribution: 0 by marker, 0 by map, 6 by heuristic, 0 unattributed
+warning: 6 messages attributed by heuristic, not by marker
 warning: session s-one mentions several tasks; counted on one task
 Claude cost is an estimate at API list prices, not a subscription bill.
 prices: https://platform.claude.com/docs/en/about-claude/pricing, retrieved 2026-11-03
@@ -61,12 +63,22 @@ ABC-12,4,36,164,0,250,340,1003,0.0066,0
 XYZ-3,2,90100,250,0,400,0,20300,0.0461,1
 ```
 
-The total line, warnings and the estimate notice go to stderr in CSV mode.
+The total line, the attribution line, warnings and the estimate notice go to
+stderr in CSV mode.
+
+Line `attribution: ...`: how the messages of the report found their task
+([../markers.md](../markers.md)). `by marker` were assigned by `kanjo mark`;
+`by map` by the manual task map; `by heuristic` by the most frequent label in
+the session's user messages; `unattributed` have task `-`. The counts follow the
+selection (`--task`, `--since`) and are summed over projects with `--all`.
+
+Warning `N messages attributed by heuristic, not by marker`: printed when that
+count is above 0. The heuristic is a guess; markers are exact.
 
 Warning `session <id> mentions several tasks; counted on one task`: that
-session's messages named more than one task label but all its usage is filed
-under one task (task markers, which would split it per message, are not built
-yet).
+session has messages without a marker, and its user messages named more than
+one task label, but those messages are filed under one task. Markers split a
+session per message.
 
 When the database is missing or empty the exit code is 0 and the text
 `no data; run kanjo snapshot` is printed: on stdout normally, on stderr with
