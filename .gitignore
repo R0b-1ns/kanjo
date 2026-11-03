@@ -1,0 +1,9 @@
+/dist/
+/kanjo
+*.test
+.DS_Store
+.metrics/
+target/
+.ai-usage/
+.cairn/
+.superpowers/
