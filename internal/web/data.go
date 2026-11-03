@@ -24,6 +24,15 @@ type Data struct {
 	MultiTaskSessions []string           `json:"multi_task_sessions"`
 	Projects          []GroupData        `json:"projects"`
 	FailedProjects    []string           `json:"failed_projects"`
+	Attribution       AttributionData    `json:"attribution"`
+}
+
+// AttributionData counts messages by how their task was found.
+type AttributionData struct {
+	Marker    int64 `json:"marker"`
+	Map       int64 `json:"map"`
+	Heuristic int64 `json:"heuristic"`
+	None      int64 `json:"none"`
 }
 
 // PriceSource says where the prices come from and when they were taken.
@@ -152,6 +161,7 @@ func (s *server) build(req request, loaded Loaded) Data {
 		MultiTaskSessions: append([]string{}, dash.Tasks.MultiLabelSessions...),
 		Projects:          []GroupData{},
 		FailedProjects:    append([]string{}, loaded.Failed...),
+		Attribution:       AttributionData(dash.Tasks.Attribution),
 	}
 	if req.scope == "all" {
 		q := req.query

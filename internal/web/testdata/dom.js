@@ -56,6 +56,7 @@ $("scope").value = process.env.SCOPE || "project";
     projectsHidden: $("projects-card").hidden, projectNames: rowNames("projects"), failed: $("failed").children.map((c) => c.textContent),
     multi: $("multi").children.map((c) => c.textContent), taskOptions: $("task").children.map((c) => c.textContent),
     tokenRows: $("tokens").children.length,
+    attribution: $("attribution").textContent, attributionWarn: $("attribution-warn").textContent,
     legend: $("split").children.length ? $("split").children[$("split").children.length - 1].textContent : "",
   }));
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -79,6 +79,14 @@ function renderTotal(data) {
   byId("notice").textContent = data.notice;
 }
 
+function renderAttribution(a) {
+  byId("attribution").textContent = "Task attribution: " + num(a.marker) + " by marker, " + num(a.map) + " by map, " +
+    num(a.heuristic) + " by heuristic, " + num(a.none) + " unattributed.";
+  byId("attribution-warn").textContent = a.heuristic === 0 ? ""
+    : a.heuristic === 1 ? "1 message was given a task by guessing from your messages, not by a marker."
+    : num(a.heuristic) + " messages were given a task by guessing from your messages, not by a marker.";
+}
+
 function renderTokens(models) {
   const table = byId("tokens");
   clear(table);
@@ -116,6 +124,7 @@ function renderTaskFilter(tasks) {
 
 function render(data) {
   renderTotal(data);
+  renderAttribution(data.attribution);
   const cost = (g) => (g.usd === null ? 0 : g.usd);
   const costLabel = (g) => usd(g.usd);
   bars(byId("models"), data.models, cost, costLabel);

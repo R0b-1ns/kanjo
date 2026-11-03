@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/R0b-1ns/kanjo/internal/core"
 	"github.com/R0b-1ns/kanjo/internal/kanjotest"
 	"github.com/R0b-1ns/kanjo/internal/web"
 )
@@ -279,5 +280,17 @@ func TestServeStopsOnSIGTERMWithoutAnInjectedContext(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("serve ignored SIGTERM")
+	}
+}
+
+func TestPageAndCLIGiveTheSameAttribution(t *testing.T) {
+	w := newWorld(t)
+	w.addMarker("s-two", core.MarkStart, "2026-11-01T00:00:00Z", "MARK-1")
+	w.must("snapshot")
+	d := apiData(t, w.serve(), "")
+	line := fmt.Sprintf("attribution: %d by marker, %d by map, %d by heuristic, %d unattributed\n",
+		d.Attribution.Marker, d.Attribution.Map, d.Attribution.Heuristic, d.Attribution.None)
+	if line != "attribution: 2 by marker, 0 by map, 4 by heuristic, 0 unattributed\n" || !strings.Contains(w.must("usage"), line) {
+		t.Fatalf("page says %q; usage says\n%s", line, w.must("usage"))
 	}
 }

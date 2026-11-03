@@ -177,3 +177,27 @@ func TestHostileValuesStayData(t *testing.T) {
 		t.Fatalf("values must round-trip unchanged: %+v", d)
 	}
 }
+
+func TestDataCarriesAttributionCounts(t *testing.T) {
+	ps := fixture()
+	ps[0].Rows[0].Marked = 2
+	ps[0].Sessions = []core.SessionInfo{{Source: "claude", Session: "a1", TaskSource: "heuristic", LabelsSeen: 1}}
+	ps[1].Sessions = []core.SessionInfo{{Source: "claude", Session: "b1", TaskSource: "map"}}
+	_, body := get(t, loaderOf(ps), "/api/data?scope=all")
+	d := decode(t, body)
+	// a1: 3 messages, 2 marked, 1 heuristic; b1: 2 by map; b2: 2 with no session record
+	want := web.AttributionData{Marker: 2, Map: 2, Heuristic: 1, None: 2}
+	if d.Attribution != want {
+		t.Fatalf("attribution = %+v, want %+v", d.Attribution, want)
+	}
+	if !strings.Contains(string(body), `"attribution":{"marker":2,"map":2,"heuristic":1,"none":2}`) {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+func TestAttributionIsZeroNotNullWhenEmpty(t *testing.T) {
+	_, body := get(t, func(context.Context, string) (web.Loaded, error) { return web.Loaded{}, nil }, "/api/data")
+	if !strings.Contains(string(body), `"attribution":{"marker":0,"map":0,"heuristic":0,"none":0}`) {
+		t.Fatalf("body = %s", body)
+	}
+}
