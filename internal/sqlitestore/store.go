@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	schemaVersion = 1
+	schemaVersion = 2
 	dbFile        = "kanjo.db"
 )
 
@@ -30,13 +30,25 @@ CREATE TABLE IF NOT EXISTS usage(
   messages INTEGER NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL,
   reasoning INTEGER NOT NULL, cache_write_5m INTEGER NOT NULL, cache_write_1h INTEGER NOT NULL,
   cache_read INTEGER NOT NULL, cost_reported_usd REAL,
+  marked INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(source, session, day, task, model, long_context));
 CREATE TABLE IF NOT EXISTS sessions(
   source TEXT NOT NULL, session TEXT NOT NULL, task_source TEXT NOT NULL, labels_seen INTEGER NOT NULL,
   PRIMARY KEY(source, session));
 CREATE TABLE IF NOT EXISTS snapshots(
   at TEXT NOT NULL, sessions INTEGER NOT NULL, rows INTEGER NOT NULL, skipped INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS markers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('start','end')),
+  session TEXT NOT NULL,
+  task TEXT,
+  CHECK((kind = 'start') = (task IS NOT NULL)));
+CREATE INDEX IF NOT EXISTS markers_scope ON markers(session, at, id);
 `
+
+// addMarked upgrades a version 1 usage table.
+const addMarked = "ALTER TABLE usage ADD COLUMN marked INTEGER NOT NULL DEFAULT 0"
 
 // slotMatch selects the stored rows of one (source, session, day, model, tier),
 // whatever their task.
@@ -46,7 +58,10 @@ const usageCols = `source, session, day, task, model, long_context, messages, in
   reasoning, cache_write_5m, cache_write_1h, cache_read, cost_reported_usd`
 
 // Store is a core.Store backed by <dir>/kanjo.db.
-type Store struct{ db *sql.DB }
+type Store struct {
+	db      *sql.DB
+	version int // schema version of the file as opened
+}
 
 // Open creates the data directory (0700, with a .gitignore that ignores
 // everything) and the database file (0600) if needed, and migrates the schema.
@@ -74,7 +89,7 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("database %s: %w", path, err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, version: schemaVersion}, nil
 }
 
 // openDB opens the SQLite file at path; extra is URI query text put before the
@@ -112,7 +127,7 @@ func OpenReadOnly(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("database %s: %w", path, err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, version: v}, nil
 }
 
 // writeGitignore keeps usage data out of git even when the folder is inside a
@@ -169,15 +184,29 @@ func version(db *sql.DB) (v int, err error) {
 	return v, err
 }
 
+// migrate brings the file to schemaVersion in one transaction.
 func migrate(db *sql.DB) error {
-	if _, err := version(db); err != nil {
+	v, err := version(db)
+	if err != nil {
 		return err
 	}
-	if _, err := db.Exec(schema); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
-	return err
+	defer tx.Rollback() // no-op after Commit
+	if _, err := tx.Exec(schema); err != nil {
+		return err
+	}
+	if v == 1 {
+		if _, err := tx.Exec(addMarked); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Close closes the database.
