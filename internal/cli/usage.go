@@ -8,9 +8,7 @@ import (
 	"io"
 	"io/fs"
 
-	"github.com/R0b-1ns/kanjo/internal/config"
 	"github.com/R0b-1ns/kanjo/internal/core"
-	"github.com/R0b-1ns/kanjo/internal/pricesfile"
 	"github.com/R0b-1ns/kanjo/internal/sqlitestore"
 )
 
@@ -42,11 +40,7 @@ func usageCmd(args []string, stdout, stderr io.Writer, e env) int {
 		fmt.Fprintf(stderr, "kanjo usage: %v\n", err)
 		return 2
 	}
-	cfg, err := config.Load(e.home, e.cwd, e.xdg, config.Overrides{DataDir: o.dataDir})
-	if err != nil {
-		return fail(stderr, err)
-	}
-	book, err := pricesfile.Load(cfg.PricesFile)
+	cfg, book, err := setup(e, o.dataDir)
 	if err != nil {
 		return fail(stderr, err)
 	}

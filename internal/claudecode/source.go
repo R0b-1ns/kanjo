@@ -66,7 +66,7 @@ func (s Source) validate() error {
 		return errors.New("claude source: MaxLineBytes must be positive")
 	}
 	for prefix, task := range s.TaskMap {
-		if prefix == "" || !core.ValidTask(task) || task == core.NoTask {
+		if prefix == "" || !validMappedTask(task) {
 			return fmt.Errorf("claude source: invalid task map entry for prefix %q", prefix)
 		}
 	}

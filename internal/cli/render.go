@@ -23,13 +23,13 @@ func table(by string, rep core.Report) [][]string {
 		if g.Priced {
 			est = usd(g.USD)
 		}
-		out = append(out, []string{g.Name, n(g.Messages), n(g.Input), n(g.Output), n(g.Reasoning),
-			n(g.CacheWrite5m), n(g.CacheWrite1h), n(g.CacheRead), est, n(g.UnpricedMessages)})
+		out = append(out, []string{g.Name, num(g.Messages), num(g.Input), num(g.Output), num(g.Reasoning),
+			num(g.CacheWrite5m), num(g.CacheWrite1h), num(g.CacheRead), est, num(g.UnpricedMessages)})
 	}
 	return out
 }
 
-func n(v int64) string { return strconv.FormatInt(v, 10) }
+func num(v int64) string { return strconv.FormatInt(v, 10) }
 
 // usd keeps four decimals: cheap models cost fractions of a cent.
 func usd(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }

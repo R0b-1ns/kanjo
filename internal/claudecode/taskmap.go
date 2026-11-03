@@ -38,8 +38,11 @@ func parseTaskMapLine(line string) (prefix, task string, err error) {
 		return "", "", fmt.Errorf("want <session prefix><TAB><task>")
 	case !core.ValidSession(prefix):
 		return "", "", fmt.Errorf("invalid session prefix")
-	case !core.ValidTask(task) || task == core.NoTask:
+	case !validMappedTask(task):
 		return "", "", fmt.Errorf("invalid task label")
 	}
 	return prefix, task, nil
 }
+
+// validMappedTask: a manual map must name a real task, not "no task".
+func validMappedTask(task string) bool { return core.ValidTask(task) && task != core.NoTask }

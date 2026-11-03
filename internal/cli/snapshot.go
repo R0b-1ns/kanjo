@@ -31,11 +31,7 @@ func snapshotCmd(args []string, stdout, stderr io.Writer, e env) int {
 	if code := parseFlags(fs, args); code != proceed {
 		return code
 	}
-	cfg, err := config.Load(e.home, e.cwd, e.xdg, config.Overrides{DataDir: o.dataDir})
-	if err != nil {
-		return fail(stderr, err)
-	}
-	book, err := pricesfile.Load(cfg.PricesFile)
+	cfg, book, err := setup(e, o.dataDir)
 	if err != nil {
 		return fail(stderr, err)
 	}

@@ -61,16 +61,26 @@ func Open(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create database %s: %w", path, err)
 	}
 	f.Close()
-	u := url.URL{Scheme: "file", Path: path, RawQuery: "_pragma=busy_timeout(5000)"}
-	db, err := sql.Open("sqlite", u.String())
+	db, err := openDB(path, "")
 	if err != nil {
-		return nil, fmt.Errorf("open database %s: %w", path, err)
+		return nil, err
 	}
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("database %s: %w", path, err)
 	}
 	return &Store{db: db}, nil
+}
+
+// openDB opens the SQLite file at path; extra is URI query text put before the
+// common options.
+func openDB(path, extra string) (*sql.DB, error) {
+	u := url.URL{Scheme: "file", Path: path, RawQuery: extra + "_pragma=busy_timeout(5000)"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, fmt.Errorf("open database %s: %w", path, err)
+	}
+	return db, nil
 }
 
 // OpenReadOnly opens an existing database for reading only. It creates no
@@ -82,10 +92,9 @@ func OpenReadOnly(dir string) (*Store, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("database %s: %w", path, err)
 	}
-	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=busy_timeout(5000)"}
-	db, err := sql.Open("sqlite", u.String())
+	db, err := openDB(path, "mode=ro&")
 	if err != nil {
-		return nil, fmt.Errorf("open database %s: %w", path, err)
+		return nil, err
 	}
 	v, err := version(db)
 	if err == nil && v == 0 {

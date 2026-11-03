@@ -10,7 +10,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/R0b-1ns/kanjo/internal/config"
 	"github.com/R0b-1ns/kanjo/internal/core"
+	"github.com/R0b-1ns/kanjo/internal/pricesfile"
 	"github.com/R0b-1ns/kanjo/internal/selfupdate"
 	"github.com/R0b-1ns/kanjo/internal/sysclock"
 )
@@ -69,6 +71,16 @@ func run(args []string, stdout, stderr io.Writer, e env) int {
 		return 2
 	}
 	return cmd(args[1:], stdout, stderr, e)
+}
+
+// setup is the configuration and price book every report or snapshot needs.
+func setup(e env, dataDir string) (config.Config, *pricesfile.Book, error) {
+	cfg, err := config.Load(e.home, e.cwd, e.xdg, config.Overrides{DataDir: dataDir})
+	if err != nil {
+		return cfg, nil, err
+	}
+	book, err := pricesfile.Load(cfg.PricesFile)
+	return cfg, book, err
 }
 
 func fail(stderr io.Writer, err error) int {
