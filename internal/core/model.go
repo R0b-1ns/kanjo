@@ -97,18 +97,10 @@ func ValidDay(s string) bool {
 
 // Validate checks every field against the closed rules of the data model.
 func (r UsageRow) Validate() error {
-	switch {
-	case !ValidSource(r.Source):
-		return errors.New("invalid source")
-	case !ValidSession(r.Session):
-		return errors.New("invalid session id")
-	case !ValidDay(r.Day):
-		return errors.New("invalid day")
-	case !ValidTask(r.Task):
-		return errors.New("invalid task label")
-	case !ValidModel(r.Model):
-		return errors.New("invalid model id")
-	case r.Messages < 0:
+	if err := r.Key.validate(); err != nil {
+		return err
+	}
+	if r.Messages < 0 {
 		return errors.New("messages is negative")
 	}
 	if err := r.Tokens.validate(); err != nil {
@@ -116,6 +108,22 @@ func (r UsageRow) Validate() error {
 	}
 	if c := r.CostReportedUSD; c != nil && !(*c >= 0 && *c <= math.MaxFloat64) {
 		return errors.New("invalid reported cost")
+	}
+	return nil
+}
+
+func (k Key) validate() error {
+	switch {
+	case !ValidSource(k.Source):
+		return errors.New("invalid source")
+	case !ValidSession(k.Session):
+		return errors.New("invalid session id")
+	case !ValidDay(k.Day):
+		return errors.New("invalid day")
+	case !ValidTask(k.Task):
+		return errors.New("invalid task label")
+	case !ValidModel(k.Model):
+		return errors.New("invalid model id")
 	}
 	return nil
 }
