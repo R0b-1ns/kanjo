@@ -85,7 +85,7 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrate(db); err != nil {
+	if err := migrate(context.Background(), db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("database %s: %w", path, err)
 	}
@@ -178,35 +178,43 @@ func refuseLink(path string) error {
 
 // version reads the schema version and refuses one from a newer kanjo.
 func version(db *sql.DB) (v int, err error) {
-	if err = db.QueryRow("PRAGMA user_version").Scan(&v); err == nil && v > schemaVersion {
-		err = fmt.Errorf("schema version %d is newer than this kanjo supports (%d); update kanjo", v, schemaVersion)
+	if err = db.QueryRow("PRAGMA user_version").Scan(&v); err == nil {
+		err = checkVersion(v)
 	}
 	return v, err
 }
 
-// migrate brings the file to schemaVersion in one transaction.
-func migrate(db *sql.DB) error {
-	v, err := version(db)
-	if err != nil {
-		return err
+// checkVersion refuses a schema from a newer kanjo.
+func checkVersion(v int) error {
+	if v > schemaVersion {
+		return fmt.Errorf("schema version %d is newer than this kanjo supports (%d); update kanjo", v, schemaVersion)
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() // no-op after Commit
-	if _, err := tx.Exec(schema); err != nil {
-		return err
-	}
-	if v == 1 {
-		if _, err := tx.Exec(addMarked); err != nil {
+	return nil
+}
+
+// migrate brings the file to schemaVersion in one immediate transaction: the
+// version is read after the write lock is taken, so two kanjo processes opening
+// a version 1 file cannot both upgrade it.
+func migrate(ctx context.Context, db *sql.DB) error {
+	return (&Store{db: db}).immediate(ctx, func(conn *sql.Conn) error {
+		var v int
+		if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 			return err
 		}
-	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		if err := checkVersion(v); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, schema); err != nil {
+			return err
+		}
+		if v == 1 {
+			if _, err := conn.ExecContext(ctx, addMarked); err != nil {
+				return err
+			}
+		}
+		_, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
 		return err
-	}
-	return tx.Commit()
+	})
 }
 
 // Close closes the database.

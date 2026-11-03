@@ -120,3 +120,25 @@ func TestFreshDatabaseHasTheMarkersTable(t *testing.T) {
 		t.Fatalf("usage.marked present = %d, err %v", n, err)
 	}
 }
+
+func TestConcurrentOpensOfAVersion1DatabaseAllSucceed(t *testing.T) {
+	dir := writeVersion1(t)
+	errs := make(chan error, 8)
+	for i := 0; i < cap(errs); i++ {
+		go func() {
+			s, err := sqlitestore.Open(dir)
+			if err == nil {
+				s.Close()
+			}
+			errs <- err
+		}()
+	}
+	for i := 0; i < cap(errs); i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("Open: %v", err)
+		}
+	}
+	if v := userVersion(t, dir); v != 2 {
+		t.Errorf("user_version = %d, want 2", v)
+	}
+}
