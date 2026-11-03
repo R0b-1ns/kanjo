@@ -15,7 +15,10 @@ import (
 	"github.com/R0b-1ns/kanjo/internal/core"
 )
 
-const schemaVersion = 1
+const (
+	schemaVersion = 1
+	dbFile        = "kanjo.db"
+)
 
 const schema = `
 CREATE TABLE IF NOT EXISTS usage(
@@ -47,7 +50,7 @@ func Open(dir string) (*Store, error) {
 	if err := writeGitignore(dir); err != nil {
 		return nil, fmt.Errorf("write %s: %w", filepath.Join(dir, ".gitignore"), err)
 	}
-	path := filepath.Join(dir, "kanjo.db")
+	path := Path(dir)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // private from the first byte
 	if err != nil {
 		return nil, fmt.Errorf("create database %s: %w", path, err)
@@ -181,3 +184,6 @@ func (s *Store) Sessions(ctx context.Context) ([]core.SessionInfo, error) {
 	}
 	return out, rs.Err()
 }
+
+// Path is the database file of a data folder.
+func Path(dir string) string { return filepath.Join(dir, dbFile) }
