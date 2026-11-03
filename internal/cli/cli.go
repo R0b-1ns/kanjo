@@ -119,13 +119,22 @@ const proceed = -1
 // parseFlags parses args into fs. It returns proceed, or the exit code the
 // command must stop with (help requested, bad flag, or stray argument).
 func parseFlags(fs *flag.FlagSet, args []string) int {
+	if code := parseFlagsLeaving(fs, args); code != proceed {
+		return code
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(fs.Output(), "kanjo %s: unexpected argument %q\n", fs.Name(), fs.Arg(0))
+		return 2
+	}
+	return proceed
+}
+
+// parseFlagsLeaving parses args and leaves the positional ones in fs.Args().
+func parseFlagsLeaving(fs *flag.FlagSet, args []string) int {
 	switch err := fs.Parse(args); {
 	case err == flag.ErrHelp:
 		return 0
 	case err != nil:
-		return 2
-	case fs.NArg() > 0:
-		fmt.Fprintf(fs.Output(), "kanjo %s: unexpected argument %q\n", fs.Name(), fs.Arg(0))
 		return 2
 	}
 	return proceed

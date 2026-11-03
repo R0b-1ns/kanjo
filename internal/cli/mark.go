@@ -78,17 +78,6 @@ func parseMarkArgs(flags *flag.FlagSet, sub string, args []string) (task string,
 	return task, proceed
 }
 
-// parseFlagsLeaving parses args and leaves the positional ones in flags.Args().
-func parseFlagsLeaving(flags *flag.FlagSet, args []string) int {
-	switch err := flags.Parse(args); {
-	case err == flag.ErrHelp:
-		return 0
-	case err != nil:
-		return 2
-	}
-	return proceed
-}
-
 // validate checks the task and session before any file is touched.
 func (o *markOpts) validate(sub, task string) error {
 	if sub == "start" && (task == "" || task == core.NoTask || !core.ValidTask(task)) {
