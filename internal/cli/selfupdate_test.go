@@ -37,10 +37,10 @@ func updaterFor(t *testing.T, status int) (selfupdate.Updater, string) {
 			return
 		}
 		fmt.Fprintf(w, `{"tag_name":%q,"assets":[{"name":%q,"browser_download_url":%q},{"name":"SHA256SUMS","browser_download_url":%q}]}`,
-			releaseTag, name, srv.URL+"/dl/bin", srv.URL+"/dl/sums")
+			releaseTag, name, srv.URL+"/dl/"+releaseTag+"/bin", srv.URL+"/dl/"+releaseTag+"/sums")
 	})
-	mux.HandleFunc("/dl/bin", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, freshBinary) })
-	mux.HandleFunc("/dl/sums", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/dl/"+releaseTag+"/bin", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, freshBinary) })
+	mux.HandleFunc("/dl/"+releaseTag+"/sums", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(h[:]), name)
 	})
 	srv = httptest.NewTLSServer(mux)
@@ -52,6 +52,7 @@ func updaterFor(t *testing.T, status int) (selfupdate.Updater, string) {
 	return selfupdate.Updater{
 		Client: srv.Client(), LatestURL: srv.URL + "/latest", AllowedHosts: []string{strings.TrimPrefix(srv.URL, "https://")},
 		Current: runningTag, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Exe: exe,
+		AssetBase: srv.URL + "/dl/",
 	}, exe
 }
 
@@ -117,6 +118,9 @@ func TestSelfUpdateUsageErrorsExit2(t *testing.T) {
 
 func TestProductionUpdaterOnlyTalksToGitHub(t *testing.T) {
 	u := productionUpdater("/bin/kanjo")
+	if u.AssetBase != "https://github.com/R0b-1ns/kanjo/releases/download/" {
+		t.Errorf("AssetBase = %q: assets must be pinned to this repository's releases", u.AssetBase)
+	}
 	if u.Current != Version || u.Exe != "/bin/kanjo" || !strings.HasPrefix(u.LatestURL, "https://api.github.com/repos/R0b-1ns/kanjo/") {
 		t.Fatalf("updater = %+v", u)
 	}

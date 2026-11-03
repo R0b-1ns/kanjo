@@ -12,6 +12,8 @@ import (
 	"github.com/R0b-1ns/kanjo/internal/selfupdate"
 )
 
+const releaseAssetBase = "https://github.com/R0b-1ns/kanjo/releases/download/"
+
 const latestReleaseURL = "https://api.github.com/repos/R0b-1ns/kanjo/releases/latest"
 
 // releaseHosts are the only hosts self-update may contact: the GitHub API, the
@@ -20,7 +22,7 @@ var releaseHosts = []string{"api.github.com", "github.com", "objects.githubuserc
 
 func productionUpdater(exe string) selfupdate.Updater {
 	return selfupdate.Updater{
-		LatestURL: latestReleaseURL, AllowedHosts: releaseHosts,
+		LatestURL: latestReleaseURL, AllowedHosts: releaseHosts, AssetBase: releaseAssetBase,
 		Current: Version, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Exe: exe,
 	}
 }

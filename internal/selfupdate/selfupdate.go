@@ -60,6 +60,10 @@ type Updater struct {
 	Current      string       // tag of the running binary
 	GOOS, GOARCH string       // platform of the binary to fetch
 	Exe          string       // path of the binary to replace
+	// AssetBase, when set, pins the files to one repository: every asset URL
+	// must start with AssetBase + <release tag> + "/". An allowed host alone
+	// is not enough, since GitHub serves every repository.
+	AssetBase string
 	// Size caps in bytes; 0 means the default.
 	MaxAPIBytes, MaxSumsBytes, MaxBinaryBytes int64
 }
@@ -88,9 +92,9 @@ func (u Updater) Update(ctx context.Context) (tag string, updated bool, err erro
 		return r.Tag, false, errors.New("cannot tell which binary to replace")
 	}
 	name := "kanjo-" + u.GOOS + "-" + u.GOARCH
-	binURL, sumsURL := r.assetURL(name), r.assetURL("SHA256SUMS")
-	if binURL == "" || sumsURL == "" {
-		return r.Tag, false, fmt.Errorf("release %s has no %s binary or no SHA256SUMS", r.Tag, u.GOOS+"/"+u.GOARCH)
+	binURL, sumsURL, err := u.assets(r, name)
+	if err != nil {
+		return r.Tag, false, err
 	}
 	sums, err := u.readAll(ctx, sumsURL, orDefault(u.MaxSumsBytes, defaultMaxSums))
 	if err != nil {
@@ -104,6 +108,21 @@ func (u Updater) Update(ctx context.Context) (tag string, updated bool, err erro
 		return r.Tag, false, err
 	}
 	return r.Tag, true, nil
+}
+
+// assets returns the URLs of the binary called name and of SHA256SUMS, refusing
+// any that is not under AssetBase.
+func (u Updater) assets(r release, name string) (binURL, sumsURL string, err error) {
+	binURL, sumsURL = r.assetURL(name), r.assetURL("SHA256SUMS")
+	if binURL == "" || sumsURL == "" {
+		return "", "", fmt.Errorf("release %s has no %s binary or no SHA256SUMS", r.Tag, u.GOOS+"/"+u.GOARCH)
+	}
+	for _, raw := range []string{binURL, sumsURL} {
+		if u.AssetBase != "" && !strings.HasPrefix(raw, u.AssetBase+r.Tag+"/") {
+			return "", "", errors.New("release asset is outside this repository's release path")
+		}
+	}
+	return binURL, sumsURL, nil
 }
 
 func (r release) assetURL(name string) string {

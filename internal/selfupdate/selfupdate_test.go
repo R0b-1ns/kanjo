@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ type fakeRelease struct {
 func newFake(t *testing.T) *fakeRelease {
 	t.Helper()
 	f := &fakeRelease{binary: newBinary, status: map[string]int{}}
-	f.assetURL = func(base, name string) string { return base + "/dl/" + name }
+	f.assetURL = func(base, name string) string { return base + "/dl/" + tag + "/" + name }
 	mux := http.NewServeMux()
 	mux.HandleFunc("/latest", func(w http.ResponseWriter, r *http.Request) {
 		f.hits.Add(1)
@@ -58,8 +59,8 @@ func newFake(t *testing.T) *fakeRelease {
 	})
 	mux.HandleFunc("/dl/", func(w http.ResponseWriter, r *http.Request) {
 		f.hits.Add(1)
-		name := strings.TrimPrefix(r.URL.Path, "/dl/")
-		if code := f.status[r.URL.Path]; code != 0 {
+		name := path.Base(r.URL.Path)
+		if code := f.status["/dl/"+name]; code != 0 {
 			http.Error(w, "secret server detail", code)
 			return
 		}
@@ -96,6 +97,7 @@ func (f *fakeRelease) updater(t *testing.T) (Updater, string) {
 	return Updater{
 		Client: f.srv.Client(), LatestURL: f.srv.URL + "/latest", AllowedHosts: []string{u.Host},
 		Current: "v0.0.0-20260101000000-bbbbbbbbbbbb", GOOS: "linux", GOARCH: "amd64", Exe: exe,
+		AssetBase: f.srv.URL + "/dl/",
 	}, exe
 }
 
@@ -221,6 +223,7 @@ func TestForeignHostsAreRefused(t *testing.T) {
 	f := newFake(t)
 	f.assetURL = func(_, name string) string { return "https://evil.example/" + name }
 	u, exe := f.updater(t)
+	u.AssetBase = "" // the host allow-list must refuse on its own, without the path pin
 	if _, _, err := u.Update(context.Background()); err == nil || !strings.Contains(err.Error(), "evil.example") {
 		t.Fatalf("err = %v, want a refusal naming the host", err)
 	}
@@ -480,6 +483,29 @@ func TestOnlyANewerReleaseIsAnUpdate(t *testing.T) {
 		}
 		if !c.want && content(t, exe) != oldBinary {
 			t.Errorf("%s: a release that is not newer must not replace the binary", name)
+		}
+	}
+}
+
+// An allowed host is not enough: GitHub hosts every repository, so a forged
+// API answer could point the binary and its SHA256SUMS at someone else's release.
+func TestAssetsMustBelongToTheRepositoryRelease(t *testing.T) {
+	cases := map[string]func(base, name string) string{
+		"other repository path": func(base, name string) string { return base + "/attacker/x/" + tag + "/" + name },
+		"other tag":             func(base, name string) string { return base + "/dl/v0.0.0-20990101000000-cccccccccccc/" + name },
+		"no tag directory":      func(base, name string) string { return base + "/dl/" + name },
+		"sibling prefix":        func(base, name string) string { return base + "/dl-evil/" + tag + "/" + name },
+	}
+	for name, assetURL := range cases {
+		f := newFake(t)
+		f.assetURL = assetURL
+		u, exe := f.updater(t)
+		_, updated, err := u.Update(context.Background())
+		if err == nil || updated || !strings.Contains(err.Error(), "outside") {
+			t.Errorf("%s: updated %v err %v, want a refusal", name, updated, err)
+		}
+		if content(t, exe) != oldBinary {
+			t.Errorf("%s: binary replaced", name)
 		}
 	}
 }
