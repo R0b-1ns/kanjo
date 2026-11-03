@@ -276,3 +276,45 @@ func TestRepoPathMayNameItsOwnFolder(t *testing.T) {
 		t.Fatalf("data_dir = . must be accepted: %+v, %v", c, err)
 	}
 }
+
+func TestRepoConfigCannotEscapeThroughASymlink(t *testing.T) {
+	cases := map[string]string{
+		"link as data dir":      "data_dir = \"link\"\n",
+		"under a link":          "data_dir = \"link/data\"\n",
+		"prices under a link":   "prices_file = \"link/prices.json\"\n",
+		"task map under a link": "[task]\nmap_file = \"link/m.tsv\"\n",
+		"dangling link":         "data_dir = \"dangling/data\"\n",
+	}
+	for name, content := range cases {
+		e := newEnv(t)
+		outside := t.TempDir()
+		if err := os.MkdirAll(e.cwd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(e.cwd, "link")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(outside, "not-yet"), filepath.Join(e.cwd, "dangling")); err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(e.cwd, "kanjo.toml")
+		put(t, file, content)
+		if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), file) {
+			t.Errorf("%s: err = %v, want a refusal naming %s", name, err, file)
+		}
+	}
+}
+
+func TestRepoConfigMayUseASymlinkThatStaysInside(t *testing.T) {
+	e := newEnv(t)
+	if err := os.MkdirAll(filepath.Join(e.cwd, "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(e.cwd, "real"), filepath.Join(e.cwd, "inner")); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(e.cwd, "kanjo.toml"), "data_dir = \"inner/data\"\n")
+	if _, err := e.load(t); err != nil {
+		t.Fatalf("a link that stays inside the folder is fine: %v", err)
+	}
+}

@@ -65,16 +65,20 @@ func TestParseAcceptsMinimalFile(t *testing.T) {
 
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
-		"unknown field":    strings.Replace(okFile, `"unit"`, `"extra":1,"unit"`, 1),
-		"unknown in model": strings.Replace(okFile, `"input":1`, `"input":1,"bonus":9`, 1),
-		"negative price":   strings.Replace(okFile, `"input":1`, `"input":-1`, 1),
-		"missing price":    strings.Replace(okFile, `"cache_read":5`, `"x":5`, 1),
-		"empty models":     `{"source":"s","fetched":"2026-11-03","unit":"u","models":{}}`,
-		"bad date":         strings.Replace(okFile, "2026-11-03", "03/11/2026", 1),
-		"no source":        strings.Replace(okFile, `"source":"https://example.test/p"`, `"source":""`, 1),
-		"bad model id":     strings.Replace(okFile, `"m":{`, `"bad model":{`, 1),
-		"not json":         `{`,
-		"trailing data":    okFile + okFile,
+		"unknown field":       strings.Replace(okFile, `"unit"`, `"extra":1,"unit"`, 1),
+		"unknown in model":    strings.Replace(okFile, `"input":1`, `"input":1,"bonus":9`, 1),
+		"negative price":      strings.Replace(okFile, `"input":1`, `"input":-1`, 1),
+		"missing price":       strings.Replace(okFile, `"cache_read":5`, `"x":5`, 1),
+		"empty models":        `{"source":"s","fetched":"2026-11-03","unit":"u","models":{}}`,
+		"bad date":            strings.Replace(okFile, "2026-11-03", "03/11/2026", 1),
+		"no source":           strings.Replace(okFile, `"source":"https://example.test/p"`, `"source":""`, 1),
+		"bad model id":        strings.Replace(okFile, `"m":{`, `"bad model":{`, 1),
+		"source with escape":  strings.Replace(okFile, "https://example.test/p", `x\u001b[2Jy`, 1),
+		"source with newline": strings.Replace(okFile, "https://example.test/p", `x\ny`, 1),
+		"source with bidi":    strings.Replace(okFile, "https://example.test/p", `x\u202ey`, 1),
+		"source too long":     strings.Replace(okFile, "https://example.test/p", strings.Repeat("a", 201), 1),
+		"not json":            `{`,
+		"trailing data":       okFile + okFile,
 		"zero threshold": strings.Replace(okFile, `"cache_read":5}`,
 			`"cache_read":5,"long_context":{"above_prompt_tokens":0,"input":1,"output":2,"cache_write_5m":3,"cache_write_1h":4,"cache_read":5}}`, 1),
 		"negative long price": strings.Replace(okFile, `"cache_read":5}`,
@@ -112,5 +116,11 @@ func TestLoad(t *testing.T) {
 	}
 	if _, err := Load(big); err == nil {
 		t.Fatal("an oversized prices file must be refused")
+	}
+}
+
+func TestParseAcceptsSourceOfExactlyTheLimit(t *testing.T) {
+	if _, err := Parse([]byte(strings.Replace(okFile, "https://example.test/p", strings.Repeat("a", 200), 1))); err != nil {
+		t.Fatal(err)
 	}
 }

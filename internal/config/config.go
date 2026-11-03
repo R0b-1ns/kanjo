@@ -160,10 +160,38 @@ func (c Config) checkRepo(md toml.MetaData, cwd string) error {
 	return nil
 }
 
-// within reports whether p, resolved against cwd, is cwd or below it.
+// within reports whether p, resolved against cwd and through any symlinks,
+// is cwd or below it. A path through a dangling symlink is refused: creating
+// it would write wherever the link points.
 func within(cwd, p string) bool {
-	rel, err := filepath.Rel(cwd, abs(cwd, p))
+	root, rootErr := realPath(cwd)
+	target, targetErr := realPath(abs(cwd, p))
+	if errors.Join(rootErr, targetErr) != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, target)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// realPath resolves the symlinks of the longest existing prefix of p and
+// appends the components that do not exist yet.
+func realPath(p string) (string, error) {
+	var rest []string
+	for {
+		resolved, err := filepath.EvalSymlinks(p)
+		if err == nil {
+			return filepath.Join(append([]string{resolved}, rest...)...), nil
+		}
+		if _, statErr := os.Lstat(p); statErr == nil || !errors.Is(err, fs.ErrNotExist) {
+			return "", err // a dangling link, or a real error
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return "", err
+		}
+		rest = append([]string{filepath.Base(p)}, rest...)
+		p = parent
+	}
 }
 
 // check validates values after each file, so errors can name the file.

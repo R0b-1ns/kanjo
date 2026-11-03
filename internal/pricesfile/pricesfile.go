@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode"
 
 	"github.com/R0b-1ns/kanjo/internal/core"
 )
@@ -16,7 +18,10 @@ import (
 //go:embed prices.json
 var defaultJSON []byte
 
-const maxFileBytes = 1 << 20
+const (
+	maxFileBytes   = 1 << 20
+	maxSourceBytes = 200
+)
 
 // prices is the five prices of a tier. Pointers make a missing price an error
 // instead of a silent zero.
@@ -102,8 +107,8 @@ func Parse(data []byte) (*Book, error) {
 	if dec.More() {
 		return nil, errors.New("unexpected data after the JSON object")
 	}
-	if f.Source == "" || !core.ValidDay(f.Fetched) || len(f.Models) == 0 {
-		return nil, errors.New("source, fetched (YYYY-MM-DD) and models are required")
+	if !validSource(f.Source) || !core.ValidDay(f.Fetched) || len(f.Models) == 0 {
+		return nil, errors.New("source (printable text, at most 200 characters), fetched (YYYY-MM-DD) and models are required")
 	}
 	b := &Book{source: f.Source, fetched: f.Fetched, models: map[string]entry{}}
 	for id, m := range f.Models {
@@ -114,6 +119,12 @@ func Parse(data []byte) (*Book, error) {
 		b.models[id] = e
 	}
 	return b, nil
+}
+
+// validSource keeps the source safe to print on a terminal: no control or
+// formatting characters, and a bounded length.
+func validSource(s string) bool {
+	return s != "" && len(s) <= maxSourceBytes && !strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
 }
 
 func (m modelEntry) entry() (entry, error) {
