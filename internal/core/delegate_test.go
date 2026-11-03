@@ -649,3 +649,11 @@ func TestInterruptDuringTestsStopsTheRemainingCommands(t *testing.T) {
 		t.Fatalf("outcome %+v err %v cmds %d", out.Result, err, len(r.sb.Cmds()))
 	}
 }
+
+func TestAgentRequestCarriesTheGrace(t *testing.T) {
+	r := newRig(t, writeA)
+	r.run(r.req())
+	if got := r.agent.Requests()[0].Grace; got != 50*time.Millisecond {
+		t.Fatalf("grace = %v", got)
+	}
+}

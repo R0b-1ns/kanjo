@@ -435,7 +435,7 @@ func (g *delegation) read() (State, bool) {
 func (g *delegation) runAgent(ctx context.Context, prompt string, resume bool) bool {
 	g.launches++
 	g.agentOK = false
-	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume, Log: g.log})
+	res, err := g.d.Agent.Run(ctx, g.box, AgentRequest{Session: g.run.Session, Model: g.run.Model, Prompt: prompt, Resume: resume, Log: g.log, Grace: g.req.Grace})
 	g.addUsage(res.Usage)
 	g.agentStep.Name, g.agentStep.Exit = "agent", res.Exit
 	g.agentStep.Duration += res.Duration

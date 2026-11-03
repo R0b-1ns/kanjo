@@ -138,7 +138,8 @@ const (
 )
 
 // AgentFixture is what AgentRunnerContract needs: a box, the session of a
-// worktree the runner may act on, and a constructor for each behavior.
+// worktree the runner may act on, and a constructor for each behavior. New
+// returns nil for AgentReportsUsage when the adapter cannot report usage.
 type AgentFixture struct {
 	Box     core.Box
 	Session string
@@ -180,7 +181,11 @@ var agentCases = []contractCase[AgentFixture]{
 		}
 	}},
 	{"the result carries no prompt or output text", func(t *testing.T, f AgentFixture) {
-		res, err := f.New(AgentReportsUsage).Run(context.Background(), f.Box, f.req())
+		runner := f.New(AgentReportsUsage)
+		if runner == nil { // an adapter that cannot report usage
+			runner = f.New(AgentSucceeds)
+		}
+		res, err := runner.Run(context.Background(), f.Box, f.req())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -211,9 +216,11 @@ var agentCases = []contractCase[AgentFixture]{
 		if res.Usage != nil {
 			t.Fatalf("usage = %+v, want nil", res.Usage)
 		}
-		res, _ = f.New(AgentReportsUsage).Run(context.Background(), f.Box, f.req())
-		if len(res.Usage) == 0 || !core.ValidModel(res.Usage[0].Model) {
-			t.Fatalf("usage = %+v", res.Usage)
+		if runner := f.New(AgentReportsUsage); runner != nil {
+			res, _ = runner.Run(context.Background(), f.Box, f.req())
+			if len(res.Usage) == 0 || !core.ValidModel(res.Usage[0].Model) {
+				t.Fatalf("usage = %+v", res.Usage)
+			}
 		}
 	}},
 	{"a request without a log is accepted", func(t *testing.T, f AgentFixture) {

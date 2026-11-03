@@ -215,6 +215,9 @@ type AgentRequest struct {
 	Session, Model, Prompt string
 	Resume                 bool
 	Log                    io.Writer
+	// Grace is the delay between the polite stop and the forced one when the
+	// context ends the agent.
+	Grace time.Duration
 }
 
 // AgentResult is how a launch ended.
