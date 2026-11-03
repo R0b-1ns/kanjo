@@ -135,7 +135,7 @@ func TestHostileFileNameIsReportedWithoutControlCharacters(t *testing.T) {
 	hostile := "evil\x1b[31m\nname"
 	f := core.JudgeChanges(added(hostile, "\xff\xfe", "good.txt"), []string{"good.txt"}, nil)
 	if f.Invalid != 2 || len(f.Unexpected) != 2 {
-		t.Fatalf("findings = %+v", f)
+		t.Fatalf("invalid %d, unexpected %q", f.Invalid, f.Unexpected) // %q: a name that was not replaced must not reach the terminal
 	}
 	for _, n := range f.Unexpected {
 		if n != "<invalid-name-1>" && n != "<invalid-name-2>" {
