@@ -142,3 +142,24 @@ func TestConcurrentOpensOfAVersion1DatabaseAllSucceed(t *testing.T) {
 		t.Errorf("user_version = %d, want 2", v)
 	}
 }
+
+func TestConcurrentOpensOfAFreshFolderAllSucceed(t *testing.T) {
+	for round := 0; round < 10; round++ {
+		dir := filepath.Join(t.TempDir(), "data")
+		errs := make(chan error, 8)
+		for i := 0; i < cap(errs); i++ {
+			go func() {
+				s, err := sqlitestore.Open(dir)
+				if err == nil {
+					s.Close()
+				}
+				errs <- err
+			}()
+		}
+		for i := 0; i < cap(errs); i++ {
+			if err := <-errs; err != nil {
+				t.Fatalf("round %d: Open: %v", round, err)
+			}
+		}
+	}
+}

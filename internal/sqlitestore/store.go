@@ -141,7 +141,7 @@ func writeGitignore(dir string) error {
 	}
 	data, err := os.ReadFile(p)
 	if errors.Is(err, fs.ErrNotExist) {
-		if err := os.WriteFile(p, []byte("*\n"), 0o644); err != nil {
+		if err := createGitignore(dir, p); err != nil {
 			return fmt.Errorf("write %s: %w", p, err)
 		}
 		return nil
@@ -153,6 +153,21 @@ func writeGitignore(dir string) error {
 		return fmt.Errorf("%s does not ignore everything, so usage data could be committed: remove it or make it a line \"*\" with no \"!\" rules", p)
 	}
 	return nil
+}
+
+// createGitignore writes the file whole under a temporary name and renames it,
+// so a concurrent kanjo never reads it half written (empty).
+func createGitignore(dir, path string) error {
+	f, err := os.CreateTemp(dir, ".gitignore-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name()) // no-op after the rename
+	_, werr := f.WriteString("*\n")
+	if err := errors.Join(werr, f.Chmod(0o644), f.Close()); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 func ignoresEverything(gitignore string) bool {
