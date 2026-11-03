@@ -5,14 +5,15 @@ Reports saved usage and its estimated cost. Reads only the database written by
 folder.
 
 ```
-kanjo usage [--by task|model|day|session] [--task LABEL] [--since YYYY-MM-DD] [--csv] [--data-dir DIR]
+kanjo usage [--all] [--by task|model|day|session|project] [--task LABEL] [--since YYYY-MM-DD] [--csv] [--data-dir DIR]
 ```
 
 ## Options
 
 | Option | Default | Values | Meaning |
 |---|---|---|---|
-| `--by` | `task` | `task`, `model`, `day`, `session` | Group rows by this field. For `task`, a label is cut at its first `/` (`ABC-12/part` counts under `ABC-12`) |
+| `--by` | `task` (`project` with `--all`) | `task`, `model`, `day`, `session`; with `--all`: `project`, `task`, `model`, `day` | Group rows by this field. For `task`, a label is cut at its first `/` (`ABC-12/part` counts under `ABC-12`). `session` is refused with `--all` (ids can collide across projects) |
+| `--all` | off | flag | Report every project listed in `projects` of the user config instead of this folder's data; see [../projects.md](../projects.md). A project that cannot be read is named on stderr and skipped |
 | `--task` | all tasks | a task label such as `ABC-12` or `ABC-12/review` | Keep rows whose task is this label or below it (`ABC-12` also selects `ABC-12/review`; `ABC-12/review` does not select `ABC-12/other`) |
 | `--since` | all days | `YYYY-MM-DD` | Keep only days on or after this date (UTC days, inclusive) |
 | `--csv` | off | flag | Print CSV on stdout instead of an aligned table |
