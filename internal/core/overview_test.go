@@ -60,3 +60,63 @@ func TestFlattenKeepsAllRowsAndSessions(t *testing.T) {
 		t.Fatalf("rows %d sessions %d", len(rows), len(sessions))
 	}
 }
+
+func twoProjects() []core.ProjectUsage {
+	a := urow("s1", "2026-11-02", "ABC-1", "m", 3, 0)
+	a.Input = 1_000_000 // 4 USD
+	return []core.ProjectUsage{
+		{Name: "app-a", Rows: []core.UsageRow{a}},
+		{Name: "app-b", Rows: []core.UsageRow{
+			urow("s1", "2026-11-03", "XYZ-3", "m", 2, 500_000), // 10 USD
+			urow("s2", "2026-11-03", "XYZ-3", "unknown", 2, 7),
+		}},
+	}
+}
+
+func TestAggregateProjectsByProject(t *testing.T) {
+	rep := core.AggregateProjects(twoProjects(), prices(), core.Query{By: "project"})
+	if len(rep.Groups) != 2 || rep.Groups[0].Name != "app-a" || rep.Groups[1].Name != "app-b" {
+		t.Fatalf("groups = %+v", rep.Groups)
+	}
+	a, b := rep.Groups[0], rep.Groups[1]
+	if !near(a.USD, 4) || a.Messages != 3 || !a.Priced || !near(b.USD, 10) || b.Messages != 4 || b.UnpricedMessages != 2 || b.Output != 500_007 {
+		t.Fatalf("a = %+v b = %+v", a, b)
+	}
+	if !near(rep.TotalUSD, 14) || rep.UnpricedMessages != 2 || !near(rep.USDBySource["claude"], 14) {
+		t.Fatalf("report = %+v", rep)
+	}
+}
+
+func TestAggregateProjectsByModelSumsAcrossProjects(t *testing.T) {
+	rep := core.AggregateProjects(twoProjects(), prices(), core.Query{By: "model"})
+	if len(rep.Groups) != 2 || rep.Groups[0].Name != "m" || !near(rep.Groups[0].USD, 14) || rep.Groups[1].Name != "unknown" {
+		t.Fatalf("groups = %+v", rep.Groups)
+	}
+}
+
+func TestAggregateProjectsSinceFilter(t *testing.T) {
+	rep := core.AggregateProjects(twoProjects(), prices(), core.Query{By: "project", Since: "2026-11-03"})
+	if len(rep.Groups) != 1 || rep.Groups[0].Name != "app-b" {
+		t.Fatalf("groups = %+v", rep.Groups)
+	}
+}
+
+func TestAggregateProjectsKeepsMultiLabelWarnings(t *testing.T) {
+	ps := twoProjects()
+	ps[0].Sessions = []core.SessionInfo{{Source: "claude", Session: "s1", TaskSource: "heuristic", LabelsSeen: 2}}
+	rep := core.AggregateProjects(ps, prices(), core.Query{By: "project"})
+	if len(rep.MultiLabelSessions) != 1 || rep.MultiLabelSessions[0] != "s1" {
+		t.Fatalf("multi = %v", rep.MultiLabelSessions)
+	}
+}
+
+func TestValidateAll(t *testing.T) {
+	for by, ok := range map[string]bool{"project": true, "task": true, "model": true, "day": true, "session": false, "bogus": false} {
+		if err := (core.Query{By: by}).ValidateAll(); (err == nil) != ok {
+			t.Errorf("ValidateAll(%q) = %v, want ok=%v", by, err, ok)
+		}
+	}
+	if err := (core.Query{By: "task", Since: "x"}).ValidateAll(); err == nil {
+		t.Error("a bad --since must be refused")
+	}
+}

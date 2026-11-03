@@ -21,6 +21,21 @@ func (q Query) Validate() error {
 	default:
 		return fmt.Errorf("invalid --by %q: want task, model, day or session", q.By)
 	}
+	return q.validateFilters()
+}
+
+// ValidateAll checks a query over several projects: session ids can collide
+// across projects, so --by session is not offered, and project is.
+func (q Query) ValidateAll() error {
+	switch q.By {
+	case "project", "task", "model", "day":
+	default:
+		return fmt.Errorf("invalid --by %q: want project, task, model or day with --all", q.By)
+	}
+	return q.validateFilters()
+}
+
+func (q Query) validateFilters() error {
 	if q.Task != "" && !ValidTask(q.Task) {
 		return fmt.Errorf("invalid --task %q", q.Task)
 	}
