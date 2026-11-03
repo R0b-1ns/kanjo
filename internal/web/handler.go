@@ -104,7 +104,3 @@ func reply(w http.ResponseWriter, r *http.Request, contentType string, body []by
 		w.Write(body)
 	}
 }
-
-func (s *server) data(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
