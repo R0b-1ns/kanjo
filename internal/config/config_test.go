@@ -45,7 +45,9 @@ func TestDefaults(t *testing.T) {
 			ProjectPrefixes: []string{ProjectFolderName(e.cwd)},
 			MaxLineBytes:    67108864,
 		},
-		Task: TaskConfig{Pattern: DefaultTaskPattern, MapFile: filepath.Join(e.cwd, ".ai-usage", "claude-tasks.tsv")},
+		Task:   TaskConfig{Pattern: DefaultTaskPattern, MapFile: filepath.Join(e.cwd, ".ai-usage", "claude-tasks.tsv")},
+		Serve:  ServeConfig{Port: 8787},
+		Prices: PricesConfig{MaxAgeDays: 30},
 	}
 	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("got  %+v\nwant %+v", c, want)
@@ -374,5 +376,75 @@ func TestDefaultDataDirCannotBeASymlinkOutside(t *testing.T) {
 	}
 	if _, err := Load(e.home, e.cwd, e.xdg, Overrides{DataDir: filepath.Join(e.cwd, ".ai-usage")}); err != nil {
 		t.Fatalf("--data-dir may use a link: %v", err)
+	}
+}
+
+func (e env) userConfig(t *testing.T, content string) {
+	t.Helper()
+	put(t, filepath.Join(e.home, ".config", "kanjo", "config.toml"), content)
+}
+
+func TestUserConfigSetsProjectsPortAndMaxAge(t *testing.T) {
+	e := newEnv(t)
+	e.userConfig(t, "projects = [\"/work/app-a\", \"/work/app.b\"]\n[serve]\nport = 9000\n[prices]\nmax_age_days = 7\n")
+	c, err := e.load(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(c.Projects, []string{"/work/app-a", "/work/app.b"}) || c.Serve.Port != 9000 || c.Prices.MaxAgeDays != 7 {
+		t.Fatalf("got %+v", c)
+	}
+}
+
+func TestInvalidProjectsPortAndAgeAreRejected(t *testing.T) {
+	for name, content := range map[string]string{
+		"relative project":  "projects = [\"app\"]\n",
+		"empty project":     "projects = [\"\"]\n",
+		"duplicate name":    "projects = [\"/a/app\", \"/b/app\"]\n",
+		"same folder twice": "projects = [\"/a/app\", \"/a/app/\"]\n",
+		"unsafe name":       "projects = [\"/a/=cmd\"]\n",
+		"dash name":         "projects = [\"/a/-\"]\n",
+		"root":              "projects = [\"/\"]\n",
+		"port zero":         "[serve]\nport = 0\n",
+		"port too high":     "[serve]\nport = 65536\n",
+		"zero max age":      "[prices]\nmax_age_days = 0\n",
+		"negative max age":  "[prices]\nmax_age_days = -3\n",
+	} {
+		e := newEnv(t)
+		e.userConfig(t, content)
+		if _, err := e.load(t); err == nil || !strings.Contains(err.Error(), "config.toml") {
+			t.Errorf("%s: err = %v, want an error naming the file", name, err)
+		}
+	}
+}
+
+func TestPortLimitsAreInclusive(t *testing.T) {
+	for _, port := range []string{"1", "65535"} {
+		e := newEnv(t)
+		e.userConfig(t, "[serve]\nport = "+port+"\n")
+		if _, err := e.load(t); err != nil {
+			t.Errorf("port %s refused: %v", port, err)
+		}
+	}
+}
+
+func TestRepoConfigMayNotSetProjectsServeOrPrices(t *testing.T) {
+	for key, content := range map[string]string{
+		"projects": "projects = [\"/etc\"]\n",
+		"serve":    "[serve]\nport = 9000\n",
+		"prices":   "[prices]\nmax_age_days = 9999\n",
+	} {
+		e := newEnv(t)
+		put(t, filepath.Join(e.cwd, "kanjo.toml"), content)
+		_, err := e.load(t)
+		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "user config") {
+			t.Errorf("%s in a repository config: err = %v", key, err)
+		}
+	}
+}
+
+func TestProjectName(t *testing.T) {
+	if got := ProjectName("/work/app-a"); got != "app-a" {
+		t.Fatalf("ProjectName = %q", got)
 	}
 }

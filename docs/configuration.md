@@ -29,6 +29,9 @@ folder.
 | `claude.max_line_bytes` | integer | `67108864` (64 MiB) | greater than 0 | Longer transcript lines are skipped and counted, never loaded |
 | `task.pattern` | string (regular expression, Go RE2 syntax) | `\b[A-Z][A-Z0-9]+-[0-9]+(\.[0-9]+)?\b` | any valid regex, or `""` to disable | Finds task labels such as `ABC-12` or `ABC-12.3` in the user's messages |
 | `task.map_file` | string | `<data_dir>/claude-tasks.tsv` | path | Manual map "session id prefix, tab, task"; see [claude-transcripts.md](claude-transcripts.md) |
+| `projects` | array of strings | `[]` | absolute folders, each with a distinct base name made of letters, digits, `.`, `_`, `-` | Projects read by `kanjo usage --all` and the page scope "all projects"; see [projects.md](projects.md). The data of a project is always `<folder>/.ai-usage/kanjo.db`. **User file only** |
+| `serve.port` | integer | `8787` | 1 to 65535 | Port of `kanjo serve` on 127.0.0.1; `--port` overrides it. **User file only** |
+| `prices.max_age_days` | integer | `30` | greater than 0 | `kanjo prices check` warns when the price file is strictly older than this. **User file only** |
 
 ## What a repository `kanjo.toml` may set
 
@@ -43,7 +46,7 @@ user file or pass the option.
 |---|---|
 | `data_dir`, `prices_file`, `task.map_file` | The path, once symbolic links are resolved, must be the current folder or inside it. A dangling symbolic link is refused |
 | `claude.project_prefixes` | Every prefix must equal the current folder's own project name (the default prefix) or start with it followed by `-`, so it can only widen to sub-folders of this project |
-| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern` | Not allowed (user config only) |
+| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern`, `projects`, `serve.port`, `prices.max_age_days` | Not allowed (user config only). A repository must not choose which other folders kanjo reads |
 
 The default `data_dir` (`.ai-usage`) follows the same rule when no user config
 or `--data-dir` sets it: if `.ai-usage` is a symbolic link leading outside the

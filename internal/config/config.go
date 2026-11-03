@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/R0b-1ns/kanjo/internal/core"
 )
 
 // DefaultTaskPattern matches issue-style ids such as ABC-12 or ABC-12.3.
@@ -30,6 +32,9 @@ type Config struct {
 	PricesFile string       `toml:"prices_file"`
 	Claude     ClaudeConfig `toml:"claude"`
 	Task       TaskConfig   `toml:"task"`
+	Projects   []string     `toml:"projects"`
+	Serve      ServeConfig  `toml:"serve"`
+	Prices     PricesConfig `toml:"prices"`
 
 	// trustedData is true when the user config set data_dir; a data_dir that
 	// comes from a repository or from the default is checked against symlinks.
@@ -48,6 +53,19 @@ type TaskConfig struct {
 	Pattern string `toml:"pattern"`
 	MapFile string `toml:"map_file"`
 }
+
+// ServeConfig configures kanjo serve.
+type ServeConfig struct {
+	Port int `toml:"port"`
+}
+
+// PricesConfig configures kanjo prices check.
+type PricesConfig struct {
+	MaxAgeDays int `toml:"max_age_days"`
+}
+
+// ProjectName is the name a project is shown under: its folder's base name.
+func ProjectName(folder string) string { return filepath.Base(folder) }
 
 // ProjectFolderName gives the name Claude Code uses for a project's transcript
 // folder: every character that is not an ASCII letter or digit becomes "-".
@@ -74,7 +92,9 @@ func Load(home, cwd, xdgConfigHome string, over Overrides) (Config, error) {
 			ProjectPrefixes: []string{ProjectFolderName(cwd)},
 			MaxLineBytes:    defaultMaxLineBytes,
 		},
-		Task: TaskConfig{Pattern: DefaultTaskPattern},
+		Task:   TaskConfig{Pattern: DefaultTaskPattern},
+		Serve:  ServeConfig{Port: 8787},
+		Prices: PricesConfig{MaxAgeDays: 30},
 	}
 	userDir := xdgConfigHome
 	if userDir == "" {
@@ -238,8 +258,33 @@ func (c Config) check() error {
 	case len(c.Claude.ProjectPrefixes) == 0 || slices.Contains(c.Claude.ProjectPrefixes, ""):
 		return errors.New("claude.project_prefixes needs at least one non-empty prefix (an empty one would match every project)")
 	}
+	if c.Serve.Port < 1 || c.Serve.Port > 65535 {
+		return errors.New("serve.port must be between 1 and 65535")
+	}
+	if c.Prices.MaxAgeDays <= 0 {
+		return errors.New("prices.max_age_days must be positive")
+	}
 	if _, err := regexp.Compile(c.Task.Pattern); err != nil {
 		return fmt.Errorf("task.pattern: %w", err)
+	}
+	return c.checkProjects()
+}
+
+// checkProjects wants absolute folders whose base names are safe, distinct
+// display names: the name is the only thing the page shows of a project.
+func (c Config) checkProjects() error {
+	names := map[string]bool{}
+	for _, p := range c.Projects {
+		name := ProjectName(p)
+		switch {
+		case !filepath.IsAbs(p):
+			return fmt.Errorf("projects: %q is not an absolute path", p)
+		case !core.ValidTask(name) || name == core.NoTask || strings.Contains(name, "/"):
+			return fmt.Errorf("projects: folder name %q is not a valid project name", name)
+		case names[name]:
+			return fmt.Errorf("projects: two folders are named %q", name)
+		}
+		names[name] = true
 	}
 	return nil
 }
