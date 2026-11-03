@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -321,5 +322,20 @@ func TestCanaryNeverInOutputOrDatabase(t *testing.T) {
 	all.Write(db)
 	if strings.Contains(all.String(), "CANARY") {
 		t.Fatal("transcript text leaked into output or the database")
+	}
+}
+
+func TestPartlyPurgedSessionNeverShrinksSavedUsage(t *testing.T) {
+	w := newWorld(t)
+	msg := func(id string, in int) string {
+		return fmt.Sprintf(`{"type":"assistant","timestamp":"2026-11-03T10:00:00Z","message":{"id":%q,"model":"claude-opus-5-5","usage":{"input_tokens":%d,"output_tokens":1}}}`, id, in)
+	}
+	file := filepath.Join(w.home, ".claude", "projects", "-home-dev-demo", "s-big.jsonl")
+	write(t, file, msg("a", 10)+"\n"+msg("b", 20)+"\n"+msg("c", 30)+"\n")
+	w.must("snapshot")
+	write(t, file, msg("c", 30)+"\n") // the older messages were purged
+	w.must("snapshot")
+	if out := w.must("usage", "--by", "session", "--csv"); !strings.Contains(out, "\ns-big,3,60,3,") {
+		t.Fatalf("saved usage shrank:\n%s", out)
 	}
 }

@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS snapshots(
   at TEXT NOT NULL, sessions INTEGER NOT NULL, rows INTEGER NOT NULL, skipped INTEGER NOT NULL);
 `
 
+// slotMatch selects the stored rows of one (source, session, day, model, tier),
+// whatever their task.
+const slotMatch = "source = ? AND session = ? AND day = ? AND model = ? AND long_context = ?"
+
 const usageCols = `source, session, day, task, model, long_context, messages, input, output,
   reasoning, cache_write_5m, cache_write_1h, cache_read, cost_reported_usd`
 
@@ -105,17 +109,18 @@ type stmt struct {
 func (s *Store) Merge(ctx context.Context, b core.Batch, log core.SnapshotLog) error {
 	var stmts []stmt
 	for _, r := range b.Rows {
-		stmts = append(stmts, stmt{"DELETE FROM usage WHERE source = ? AND session = ? AND day = ? AND model = ? AND long_context = ?",
-			[]any{r.Source, r.Session, r.Day, r.Model, r.LongContext}})
+		slot := []any{r.Source, r.Session, r.Day, r.Model, r.LongContext}
+		// Saved rows of the slot with at most as many messages are superseded;
+		// a saved row with more survives and the incoming row is dropped.
+		stmts = append(stmts,
+			stmt{"DELETE FROM usage WHERE " + slotMatch + " AND messages <= ?", append(slot, r.Messages)},
+			stmt{"INSERT OR REPLACE INTO usage(" + usageCols + ") SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM usage WHERE " + slotMatch + ")",
+				append([]any{r.Source, r.Session, r.Day, r.Task, r.Model, r.LongContext, r.Messages, r.Input, r.Output,
+					r.Reasoning, r.CacheWrite5m, r.CacheWrite1h, r.CacheRead, r.CostReportedUSD}, slot...)})
 	}
 	for _, ses := range b.Sessions {
 		stmts = append(stmts, stmt{"INSERT OR REPLACE INTO sessions VALUES(?,?,?,?)",
 			[]any{ses.Source, ses.Session, ses.TaskSource, ses.LabelsSeen}})
-	}
-	for _, r := range b.Rows {
-		stmts = append(stmts, stmt{"INSERT OR REPLACE INTO usage(" + usageCols + ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			[]any{r.Source, r.Session, r.Day, r.Task, r.Model, r.LongContext, r.Messages, r.Input, r.Output,
-				r.Reasoning, r.CacheWrite5m, r.CacheWrite1h, r.CacheRead, r.CostReportedUSD}})
 	}
 	stmts = append(stmts, stmt{"INSERT INTO snapshots VALUES(?,?,?,?)",
 		[]any{log.At.UTC().Format(time.RFC3339), log.Sessions, log.Rows, log.Skipped}})

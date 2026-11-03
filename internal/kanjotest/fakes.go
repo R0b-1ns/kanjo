@@ -31,23 +31,31 @@ func NewMemStore() *MemStore {
 func (m *MemStore) Merge(_ context.Context, b core.Batch, log core.SnapshotLog) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	replaced := map[slot]bool{}
 	for _, r := range b.Rows {
-		replaced[slotOf(r.Key)] = true
-	}
-	for k := range m.rows {
-		if replaced[slotOf(k)] {
-			delete(m.rows, k)
-		}
-	}
-	for _, r := range b.Rows {
-		m.rows[r.Key] = copyRow(r)
+		m.mergeRow(r)
 	}
 	for _, s := range b.Sessions {
 		m.sessions[sessionKey{s.Source, s.Session}] = s
 	}
 	m.logs = append(m.logs, log)
 	return nil
+}
+
+// mergeRow keeps what is saved when it counts more messages than r, so a
+// partly purged source never shrinks history; otherwise r replaces the saved
+// rows of its slot.
+func (m *MemStore) mergeRow(r core.UsageRow) {
+	for k, saved := range m.rows {
+		if slotOf(k) == slotOf(r.Key) && saved.Messages > r.Messages {
+			return
+		}
+	}
+	for k := range m.rows {
+		if slotOf(k) == slotOf(r.Key) {
+			delete(m.rows, k)
+		}
+	}
+	m.rows[r.Key] = copyRow(r)
 }
 
 // slot is a key without its task: a new task label for the same day and model

@@ -100,6 +100,20 @@ var storeCases = []struct {
 		mustReplace(t, s, batch([]core.UsageRow{fresh}, "s-1"))
 		wantRows(t, s, []core.UsageRow{gone, fresh})
 	}},
+	{"a smaller incoming row never shrinks saved usage", func(t *testing.T, s core.Store) {
+		saved := row("s-1", "2026-11-03", "ABC-1", "m", 50, nil)
+		saved.Messages = 3
+		mustReplace(t, s, batch([]core.UsageRow{saved}, "s-1"))
+		mustReplace(t, s, batch([]core.UsageRow{row("s-1", "2026-11-03", "XYZ-2", "m", 5, nil)}, "s-1"))
+		wantRows(t, s, []core.UsageRow{saved})
+	}},
+	{"a larger incoming row replaces the saved one", func(t *testing.T, s core.Store) {
+		mustReplace(t, s, batch([]core.UsageRow{row("s-1", "2026-11-03", "ABC-1", "m", 5, nil)}, "s-1"))
+		bigger := row("s-1", "2026-11-03", "XYZ-2", "m", 50, nil)
+		bigger.Messages = 3
+		mustReplace(t, s, batch([]core.UsageRow{bigger}, "s-1"))
+		wantRows(t, s, []core.UsageRow{bigger})
+	}},
 	{"untouched sessions are kept", func(t *testing.T, s core.Store) {
 		old := row("s-old", "2026-10-01", "ABC-1", "m", 1, nil)
 		fresh := row("s-new", "2026-11-03", "ABC-1", "m", 2, nil)
