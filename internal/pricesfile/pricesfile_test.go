@@ -124,3 +124,15 @@ func TestParseAcceptsSourceOfExactlyTheLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEveryPriceFileKeyIsDocumented(t *testing.T) {
+	doc, err := os.ReadFile("../../docs/prices.md")
+	if err != nil {
+		t.Fatalf("missing documentation: %v", err)
+	}
+	for _, key := range []string{"source", "fetched", "unit", "models", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "long_context", "above_prompt_tokens"} {
+		if !strings.Contains(string(doc), "`"+key+"`") {
+			t.Errorf("docs/prices.md does not document `%s`", key)
+		}
+	}
+}
