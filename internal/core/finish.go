@@ -136,7 +136,7 @@ func alreadyJudged(rec RunRecord, v LeadVerdict) (FinishOutcome, error) {
 // whether there was none left. A run that is alive is ErrStillRunning.
 func removeWorkspace(ctx context.Context, d FinishDeps, rec RunRecord) (gone bool, err error) {
 	if rec.Verdict == RunRunning {
-		return false, ErrStillRunning
+		return gone, ErrStillRunning
 	}
 	if !rec.Created {
 		return true, nil
@@ -144,13 +144,13 @@ func removeWorkspace(ctx context.Context, d FinishDeps, rec RunRecord) (gone boo
 	o := ownedOf(rec)
 	p, err := d.Workspace.Inspect(ctx, o)
 	if err != nil {
-		return false, fmt.Errorf("inspect the workspace: %w", err)
+		return gone, fmt.Errorf("inspect the workspace: %w", err)
 	}
 	if err := d.Workspace.Remove(ctx, o); err != nil {
 		if errors.Is(err, ErrBusy) {
-			return false, ErrStillRunning
+			return gone, ErrStillRunning
 		}
-		return false, fmt.Errorf("remove the workspace: %w", err)
+		return gone, fmt.Errorf("remove the workspace: %w", err)
 	}
 	return !p.DirExists && !p.BranchExists, nil
 }
