@@ -10,7 +10,7 @@ import (
 // Query selects and groups usage rows.
 type Query struct {
 	By    string // task, model, day or session
-	Task  string // "" = all tasks
+	Task  string // "" = all tasks; a label also selects its sub-tasks (label/...)
 	Since string // YYYY-MM-DD inclusive, "" = all days
 }
 
@@ -67,7 +67,8 @@ func (q Query) groupName(r UsageRow) string {
 }
 
 func (q Query) match(r UsageRow) bool {
-	return (q.Task == "" || taskRoot(r.Task) == q.Task) && (q.Since == "" || r.Day >= q.Since)
+	onTask := q.Task == "" || r.Task == q.Task || strings.HasPrefix(r.Task, q.Task+"/")
+	return onTask && (q.Since == "" || r.Day >= q.Since)
 }
 
 // Aggregate filters rows by q, groups them by q.By, and prices them. Rows whose

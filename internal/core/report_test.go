@@ -91,3 +91,29 @@ func TestQueryValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskFilterMatchesTheLabelAndItsSubTasks(t *testing.T) {
+	rows := []core.UsageRow{
+		urow("s", "2026-11-03", "ABC-1", "m", 1, 1),
+		urow("s", "2026-11-03", "ABC-1/review", "m", 2, 1),
+		urow("s", "2026-11-03", "ABC-1/review/deep", "m", 4, 1),
+		urow("s", "2026-11-03", "ABC-1/other", "m", 8, 1),
+		urow("s", "2026-11-03", "ABC-10", "m", 16, 1),
+	}
+	for filter, want := range map[string]int64{
+		"ABC-1":             1 + 2 + 4 + 8,
+		"ABC-1/review":      2 + 4,
+		"ABC-1/review/deep": 4,
+		"ABC-10":            16,
+		"ABC-1/rev":         0,
+	} {
+		rep := core.Aggregate(rows, nil, prices(), core.Query{By: "day", Task: filter})
+		var got int64
+		for _, g := range rep.Groups {
+			got += g.Messages
+		}
+		if got != want {
+			t.Errorf("--task %s counted %d messages, want %d", filter, got, want)
+		}
+	}
+}
