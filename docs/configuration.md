@@ -33,6 +33,7 @@ folder.
 | `projects` | array of strings | `[]` | absolute folders, each with a distinct base name made of letters, digits, `.`, `_`, `-` | Projects read by `kanjo usage --all` and the page scope "all projects"; see [projects.md](projects.md). The data of a project is always `<folder>/.ai-usage/kanjo.db`. **User file only** |
 | `serve.port` | integer | `8787` | 1 to 65535 | Port of `kanjo serve` on 127.0.0.1; `--port` overrides it. **User file only** |
 | `prices.max_age_days` | integer | `30` | greater than 0 | `kanjo prices check` warns when the price file is strictly older than this. **User file only** |
+| `markers.max_events` | integer | `100000` | greater than 0 | Most events (starts and ends) the marker journal may hold; `kanjo mark start` and `mark end` are refused beyond it. See [markers.md](markers.md). **User file only** |
 
 ## What a repository `kanjo.toml` may set
 
@@ -47,7 +48,7 @@ user file or pass the option.
 |---|---|
 | `data_dir`, `prices_file`, `task.map_file` | The path, once symbolic links are resolved, must be the current folder or inside it. A dangling symbolic link is refused |
 | `claude.project_prefixes` | Every prefix must equal the current folder's own project name (the default prefix) or start with it followed by `-`, so it can only widen to sub-folders of this project |
-| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern`, `task.ignore`, `projects`, `serve.port`, `prices.max_age_days` | Not allowed (user config only). A repository must not choose which other folders kanjo reads |
+| `claude.projects_dir`, `claude.max_line_bytes`, `task.pattern`, `task.ignore`, `projects`, `serve.port`, `prices.max_age_days`, `markers.max_events` | Not allowed (user config only). A repository must not choose which other folders kanjo reads |
 
 The default `data_dir` (`.ai-usage`) follows the same rule when no user config
 or `--data-dir` sets it: if `.ai-usage` is a symbolic link leading outside the

@@ -48,7 +48,7 @@ func TestDefaults(t *testing.T) {
 		},
 		Task:   TaskConfig{Pattern: DefaultTaskPattern, Ignore: DefaultTaskIgnore, MapFile: filepath.Join(e.cwd, ".ai-usage", "claude-tasks.tsv")},
 		Serve:  ServeConfig{Port: 8787},
-		Prices: PricesConfig{MaxAgeDays: 30},
+		Prices: PricesConfig{MaxAgeDays: 30}, Markers: MarkersConfig{MaxEvents: 100000},
 	}
 	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("got  %+v\nwant %+v", c, want)
@@ -479,5 +479,32 @@ func TestRepoConfigMayNotSetProjectsServeOrPrices(t *testing.T) {
 func TestProjectName(t *testing.T) {
 	if got := ProjectName("/work/app-a"); got != "app-a" {
 		t.Fatalf("ProjectName = %q", got)
+	}
+}
+
+func TestMarkersMaxEventsDefault(t *testing.T) {
+	c, err := newEnv(t).load(t)
+	if err != nil || c.Markers.MaxEvents != 100000 {
+		t.Fatalf("max_events = %d, err %v", c.Markers.MaxEvents, err)
+	}
+}
+
+func TestMarkersMaxEventsMustBePositive(t *testing.T) {
+	for value, ok := range map[string]bool{"0": false, "-5": false, "1": true, "250": true} {
+		e := newEnv(t)
+		e.userConfig(t, "[markers]\nmax_events = "+value+"\n")
+		c, err := e.load(t)
+		if (err == nil) != ok || ok && c.Markers.MaxEvents < 1 {
+			t.Errorf("max_events = %s: err = %v", value, err)
+		}
+	}
+}
+
+func TestRepoConfigMayNotSetMarkers(t *testing.T) {
+	e := newEnv(t)
+	put(t, filepath.Join(e.cwd, "kanjo.toml"), "[markers]\nmax_events = 99999999\n")
+	_, err := e.load(t)
+	if err == nil || !strings.Contains(err.Error(), "markers") || !strings.Contains(err.Error(), "user config") {
+		t.Fatalf("markers in a repository config: err = %v", err)
 	}
 }
